@@ -1,0 +1,28 @@
+[package]
+name = "pi"
+version = "0.1.0"
+authors = ["George Thomas <georgefsthomas@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+inotify = "0.8.0"
+futures = "0.1.8" #TODO very old, but what librespot uses
+
+# evdev-rs = "0.3.1" # TODO cross-compilation fails
+# https://github.com/ndesh26/evdev-rs/issues/29
+evdev-rs = { path = "evdev-rs" }
+
+#TODO higher level, but doesn't have a LAN interface (yet - they are planning on it)
+# https://github.com/Aehmlo/lifxi/issues/7
+# lifxi = "0.1.1"
+lifx-core = "0.2.0"
+
+#TODO these are only used by the copied code from librespot
+tokio-core = "*"
+tokio-io = "*"
+tokio-signal = "*"
+
+[dependencies.librespot]
+version = "0.1.0"
+default-features = false
+features = ["alsa-backend"]
