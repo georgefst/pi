@@ -1,3 +1,4 @@
+use clap::*;
 use evdev_rs::enums::{int_to_ev_key, EventCode, EV_KEY::*};
 use evdev_rs::*;
 use inotify::{EventMask, Inotify, WatchMask};
@@ -48,17 +49,28 @@ features
     train
     weather
     spotify
-        play/pause etc.
-        search for
+        search for song, artist etc. (require web API?)
         switch device (to, and maybe from, Pi)
 */
 
+// command line arg data
+#[derive(Clap, Debug)]
+struct Opts {
+    #[clap(short = "n", default_value = "Pi")]
+    spotify_device_name: String,
+    #[clap(short = "p")]
+    spotify_password: String,
+    #[clap(short = "e")]
+    evdev_port: u16, // for receiving events over LAN
+}
+
 // useful constants
-//TODO add IPs, ports etc. (or move some of them to command line args)
 const EVDEV_DIR: &str = "/dev/input/";
-const SPOTIFY_DEVICE_NAME: &str = "Pi";
 
 fn main() {
+    // get data from command line args
+    let opts: Opts = Opts::parse();
+
     // channel for Spirc
     let (txs, rxs) = channel(); //TODO doesn't need to be a channel, only set once
 
@@ -92,10 +104,10 @@ fn main() {
     });
 
     // watch for network events
+    let evdev_port = opts.evdev_port.clone();
     thread::spawn(move || {
-        //TODO what port?
         //TODO security
-        let s = &UdpSocket::bind("0.0.0.0:56701").unwrap();
+        let s = &UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], evdev_port))).unwrap();
         loop {
             let mut buf = [0; 2];
             let (_n_bytes, _addr) = s.recv_from(&mut buf).unwrap();
@@ -111,7 +123,7 @@ fn main() {
         respond_to_events(rx, rxs);
     });
 
-    main_spotify(txs);
+    main_spotify(txs, opts.spotify_device_name, opts.spotify_password);
 }
 
 // create a new thread to read events from the device at p, and send them on s
@@ -361,7 +373,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>) {
 }
 
 // create a Connect device through librespot
-fn main_spotify(txs: Sender<Arc<Spirc>>) {
+fn main_spotify(txs: Sender<Arc<Spirc>>, name: String, password: String) {
     let mut core = Core::new().unwrap();
     let handle = core.handle();
 
@@ -371,17 +383,11 @@ fn main_spotify(txs: Sender<Arc<Spirc>>) {
     let mixer = mixer::find(mixer_name).expect("Invalid mixer");
     // let mixer = mixer::find(None: Option<&String>).expect("Invalid mixer"); //TODO when 'type ascription' reaches stable
 
-    //TODO ugly - use an arg parsing library
-    let mut args = std::env::args();
-    args.next(); // ignore program name
-    let password = args.next().expect("Password expected as first argument");
-    println!("{}", password);
-
     let credentials =
         Credentials::with_password(String::from("georgefsthomas@gmail.com"), password);
 
     let session_config = SessionConfig {
-        device_id: String::from(SPOTIFY_DEVICE_NAME),
+        device_id: name.clone(),
         ..SessionConfig::default()
     };
 
@@ -391,7 +397,7 @@ fn main_spotify(txs: Sender<Arc<Spirc>>) {
     };
 
     let connect_config = ConnectConfig {
-        name: String::from(SPOTIFY_DEVICE_NAME),
+        name,
         device_type: DeviceType::default(),
         volume: u16::max_value(),
         linear_volume: false,

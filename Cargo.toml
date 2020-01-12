@@ -5,10 +5,16 @@ authors = ["George Thomas <georgefsthomas@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-inotify = "0.8.0"
 futures = "0.1.8" #TODO very old, but what librespot uses
+inotify = "0.8.0"
 
-# evdev-rs = "0.3.1" # TODO cross-compilation fails
+#TODO need 3.0, but not stable yet
+# clap = "2.33.0"
+# clap = "~3.0.0-beta1"
+clap = {git = "https://github.com/clap-rs/clap"}
+
+#TODO cross-compilation fails
+# evdev-rs = "0.3.1"
 # https://github.com/ndesh26/evdev-rs/issues/29
 evdev-rs = { path = "evdev-rs" }
 
