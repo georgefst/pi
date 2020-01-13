@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{self, Clap};
 use evdev_rs::enums::{int_to_ev_key, EventCode, EV_KEY::*};
 use evdev_rs::*;
 use inotify::{EventMask, Inotify, WatchMask};
@@ -19,6 +19,7 @@ use std::net::SocketAddr;
 use std::net::UdpSocket;
 use std::path::PathBuf;
 use std::process::Command;
+use std::result::*;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
@@ -164,26 +165,32 @@ fn set_hsbk(sock: &UdpSocket, target: SocketAddr, hsbk: HSBK) {
     };
     lifx_send(sock, target, msg)
 }
-fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> HSBK {
+// fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK> {
+fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Error> {
     let mut buf = [0; 88];
     lifx_send(sock, target, Message::LightGet);
-    let (_n_bytes, _addr) = sock.recv_from(&mut buf).unwrap(); //TODO time out if we don't get anything
-    let raw = RawMessage::unpack(&buf).unwrap();
+    let (_n_bytes, _addr) = sock.recv_from(&mut buf)?;
+    let raw = RawMessage::unpack(&buf)?;
     let msg = Message::from_raw(&raw).unwrap();
     if let Message::LightState { color: hsbk, .. } = msg {
-        hsbk
+        Ok(hsbk)
     } else {
-        panic!("failed to decode light response")
+        Err(lifx_core::Error::ProtocolError(String::from(
+            "failed to decode light response",
+        )))
     }
 }
 
 // read from 'rx', responding to events
 fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>) {
     let lifx_sock = UdpSocket::bind("0.0.0.0:56700").unwrap();
-    let lifx_target: SocketAddr = "192.168.1.187:56700".parse().unwrap();
+    lifx_sock
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let lifx_target: SocketAddr = "192.168.1.188:56700".parse().unwrap();
 
     // initialise state
-    let mut hsbk = get_hsbk(&lifx_sock, lifx_target);
+    let mut hsbk = get_hsbk(&lifx_sock, lifx_target).unwrap();
     let mut ctrl = false;
     let mut _shift = false;
     let mut _alt = false;
