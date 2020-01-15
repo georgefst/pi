@@ -530,10 +530,3 @@ impl Future for Main {
         }
     }
 }
-
-//1 does seem to always show up before all the other branches (except 3)
-//which seems to imply I was on the right track before (of trying to explicitly run it first)
-//which would be lovely as three fields would no longer be optional
-// in particular, we could get the event channel before calling core.run
-//so maybe try the same sort of thing, but move toward it more incrementally, and test
-//possibly a side effect of one of the other checks is interfering? I'm running out of ideas...
