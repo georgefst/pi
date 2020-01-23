@@ -46,7 +46,6 @@ maintainability
 stability
     too many unwraps (particularly in utility functions)
 features
-    set up IR frequencies for HDMI switcher
     train
     weather
     spotify
@@ -143,8 +142,7 @@ fn read_dev(s: Sender<InputEvent>, p: PathBuf) {
 
 // send off a command to a device, based on 'lircd.conf'
 fn ir_cmd(dev: &str, cmd: &str) {
-    Command::new("sudo")
-        .arg("irsend")
+    Command::new("irsend")
         .arg("SEND_ONCE")
         .arg(dev)
         .arg(cmd)
