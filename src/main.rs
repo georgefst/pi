@@ -40,6 +40,7 @@ maintainability
         spotify_main should be able to go into it's own thread like everything else
         review all uses of 'clone', 'move', '&' etc.
     tooling to manage imports?
+    factor out common error-handling logic for 'Command's (IR and xinput)
     cross-compile without docker
         ask on irc: https://gitter.im/librespot-org/spotify-connect-resources
 features
@@ -60,7 +61,7 @@ struct Opts {
     #[clap(short = "e")]
     evdev_port: u16, // for receiving events over LAN
     #[clap(short = "d", long = "debug")]
-    debug: bool, // currently just causes all events to be printed
+    debug: bool, // print various extra data
 }
 
 // useful constants
@@ -169,13 +170,29 @@ fn read_dev(tx: Sender<InputEvent>, path: PathBuf) {
 }
 
 // send off a command to a device, based on 'lircd.conf'
-fn ir_cmd(dev: &str, cmd: &str) {
-    Command::new("irsend")
+fn ir_cmd(dev: &str, cmd: &str, debug: bool) {
+    match Command::new("irsend")
         .arg("SEND_ONCE")
         .arg(dev)
         .arg(cmd)
         .output()
-        .unwrap();
+    {
+        Ok(out) => {
+            let o = out.clone();
+            let err = out.stderr;
+            if !err.is_empty() {
+                print!(
+                    "Failed to send IR command: {}\n{}",
+                    cmd,
+                    String::from_utf8(err).unwrap()
+                )
+            }
+            if debug {
+                print!("{}", String::from_utf8(o.stdout).unwrap());
+            }
+        }
+        Err(e) => println!("Failed to send IR command: {} ({:?})", cmd, e),
+    }
 }
 
 // LIFX helpers, until there's a complete high-level LAN API in Rust
@@ -260,17 +277,34 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>, debug:
                     for dev in ["Keyboard", "Consumer Control", "System Control"].iter() {
                         let action = if idle { "disable" } else { "enable" };
                         let full_dev = String::from("Keyboard K380 ") + dev;
-                        Command::new("xinput")
-                            .arg(action)
-                            .arg(full_dev)
-                            .output()
-                            .unwrap();
+                        let d = full_dev.clone();
+                        match Command::new("xinput").arg(action).arg(full_dev).output() {
+                            Ok(out) => {
+                                let o = out.clone();
+                                let err = out.stderr;
+                                if !err.is_empty() {
+                                    println!(
+                                        "Failed to {} xinput device: {}\n{}",
+                                        action,
+                                        d,
+                                        String::from_utf8(err).unwrap()
+                                    );
+                                }
+                                if debug {
+                                    print!("{}", String::from_utf8(o.stdout).unwrap());
+                                }
+                            }
+                            Err(e) => {
+                                println!("Failed to {} xinput device: {} ({:?})", action, d, e)
+                            }
+                        }
                     }
                     idle = !idle
                 }
                 _ => (),
             }
             if !idle {
+                let ir_cmd = |dev: &str, cmd: &str| ir_cmd(dev, cmd, debug);
                 match mode {
                     Mode::Normal => {
                         match (&k, e.value) {
