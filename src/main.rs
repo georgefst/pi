@@ -40,6 +40,7 @@ maintainability
         spotify_main should be able to go into it's own thread like everything else
         review all uses of 'clone', 'move', '&' etc.
     tooling to manage imports?
+    better event names in lircd.conf
     factor out common error-handling logic for 'Command's (IR and xinput)
     cross-compile without docker
         ask on irc: https://gitter.im/librespot-org/spotify-connect-resources
@@ -304,19 +305,19 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>, debug:
                 _ => (),
             }
             if !idle {
-                let ir_cmd = |dev: &str, cmd: &str| ir_cmd(dev, cmd, debug);
                 match mode {
                     Mode::Normal => {
+                        let stereo = |cmd: &str| ir_cmd("stereo", cmd, debug);
                         match (&k, e.value) {
                             (KEY_T, 1) => mode = Mode::TV,
                             (KEY_P, 1) => {
-                                ir_cmd("stereo", "KEY_POWER");
+                                stereo("KEY_POWER");
                                 sleep(Duration::from_secs(1));
-                                ir_cmd("stereo", "KEY_TAPE");
+                                stereo("KEY_TAPE");
                             }
-                            (KEY_VOLUMEUP, 1) => ir_cmd("stereo", "KEY_VOLUMEUP"),
-                            (KEY_VOLUMEDOWN, 1) => ir_cmd("stereo", "KEY_VOLUMEDOWN"),
-                            (KEY_MUTE, 1) => ir_cmd("stereo", "muting"),
+                            (KEY_VOLUMEUP, 1) => stereo("KEY_VOLUMEUP"),
+                            (KEY_VOLUMEDOWN, 1) => stereo("KEY_VOLUMEDOWN"),
+                            (KEY_MUTE, 1) => stereo("muting"),
                             (KEY_PLAYPAUSE, 1) => spirc.play_pause(),
                             (KEY_PREVIOUSSONG, 1) => spirc.prev(),
                             (KEY_NEXTSONG, 1) => spirc.next(),
@@ -412,53 +413,66 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>, debug:
                             _ => (),
                         }
                     }
-                    Mode::TV => match (&k, e.value) {
-                        (KEY_T, 1) => mode = Mode::Normal,
-                        (KEY_SPACE, 1) => {
-                            ir_cmd("tv", "KEY_AUX");
-                            sleep(Duration::from_millis(300));
-                            ir_cmd("tv", "KEY_AUX");
-                            sleep(Duration::from_millis(300));
-                            ir_cmd("tv", "KEY_OK");
+                    Mode::TV => {
+                        let tv = |cmd: &str| ir_cmd("tv", cmd, debug);
+                        let switcher = |cmd: &str| ir_cmd("switcher", cmd, debug);
+                        match (&k, e.value) {
+                            (KEY_T, 1) => mode = Mode::Normal,
+                            (KEY_SPACE, 1) => {
+                                tv("KEY_AUX");
+                                sleep(Duration::from_millis(300));
+                                tv("KEY_AUX");
+                                sleep(Duration::from_millis(300));
+                                tv("KEY_OK");
+                            }
+                            (KEY_P, 1) => tv("KEY_POWER"),
+                            (KEY_1, 1) => {
+                                if ctrl {
+                                    switcher("KEY_1")
+                                } else {
+                                    tv("KEY_1")
+                                };
+                            }
+                            (KEY_2, 1) => {
+                                if ctrl {
+                                    switcher("KEY_2")
+                                } else {
+                                    tv("KEY_2")
+                                };
+                            }
+                            (KEY_3, 1) => {
+                                if ctrl {
+                                    switcher("KEY_3")
+                                } else {
+                                    tv("KEY_3")
+                                };
+                            }
+                            (KEY_4, 1) => tv("KEY_4"),
+                            (KEY_5, 1) => tv("KEY_5"),
+                            (KEY_6, 1) => tv("KEY_6"),
+                            (KEY_7, 1) => tv("KEY_7"),
+                            (KEY_8, 1) => tv("KEY_8"),
+                            (KEY_9, 1) => tv("KEY_9"),
+                            (KEY_0, 1) => tv("KEY_0"),
+                            (KEY_VOLUMEUP, 1) => tv("KEY_VOLUMEUP"),
+                            (KEY_VOLUMEDOWN, 1) => tv("KEY_VOLUMEDOWN"),
+                            (KEY_MUTE, 1) => tv("KEY_MUTE"),
+                            (KEY_COMMA, 1) => tv("KEY_CHANNELDOWN"),
+                            (KEY_DOT, 1) => tv("KEY_CHANNELUP"),
+                            (KEY_S, 1) => tv("KEY_SETUP"),
+                            (KEY_G, 1) => tv("KEY_G"),
+                            (KEY_Q, 1) => tv("KEY_MENU"),
+                            (KEY_UP, 1) => tv("KEY_UP"),
+                            (KEY_DOWN, 1) => tv("KEY_DOWN"),
+                            (KEY_LEFT, 1) => tv("KEY_LEFT"),
+                            (KEY_RIGHT, 1) => tv("KEY_RIGHT"),
+                            (KEY_ENTER, 1) => tv("KEY_OK"),
+                            (KEY_BACKSPACE, 1) => tv("KEY_BACK"),
+                            (KEY_I, 1) => tv("KEY_INFO"),
+                            (KEY_ESC, 1) => tv("KEY_EXIT"),
+                            _ => (),
                         }
-                        (KEY_P, 1) => ir_cmd("tv", "KEY_POWER"),
-                        (KEY_1, 1) => {
-                            let dev = if ctrl { "switcher" } else { "tv" };
-                            ir_cmd(dev, "KEY_1")
-                        }
-                        (KEY_2, 1) => {
-                            let dev = if ctrl { "switcher" } else { "tv" };
-                            ir_cmd(dev, "KEY_2")
-                        }
-                        (KEY_3, 1) => {
-                            let dev = if ctrl { "switcher" } else { "tv" };
-                            ir_cmd(dev, "KEY_3")
-                        }
-                        (KEY_4, 1) => ir_cmd("tv", "KEY_4"),
-                        (KEY_5, 1) => ir_cmd("tv", "KEY_5"),
-                        (KEY_6, 1) => ir_cmd("tv", "KEY_6"),
-                        (KEY_7, 1) => ir_cmd("tv", "KEY_7"),
-                        (KEY_8, 1) => ir_cmd("tv", "KEY_8"),
-                        (KEY_9, 1) => ir_cmd("tv", "KEY_9"),
-                        (KEY_0, 1) => ir_cmd("tv", "KEY_0"),
-                        (KEY_VOLUMEUP, 1) => ir_cmd("tv", "KEY_VOLUMEUP"),
-                        (KEY_VOLUMEDOWN, 1) => ir_cmd("tv", "KEY_VOLUMEDOWN"),
-                        (KEY_MUTE, 1) => ir_cmd("tv", "KEY_MUTE"),
-                        (KEY_COMMA, 1) => ir_cmd("tv", "KEY_CHANNELDOWN"),
-                        (KEY_DOT, 1) => ir_cmd("tv", "KEY_CHANNELUP"),
-                        (KEY_S, 1) => ir_cmd("tv", "KEY_SETUP"),
-                        (KEY_G, 1) => ir_cmd("tv", "KEY_G"),
-                        (KEY_Q, 1) => ir_cmd("tv", "KEY_MENU"),
-                        (KEY_UP, 1) => ir_cmd("tv", "KEY_UP"),
-                        (KEY_DOWN, 1) => ir_cmd("tv", "KEY_DOWN"),
-                        (KEY_LEFT, 1) => ir_cmd("tv", "KEY_LEFT"),
-                        (KEY_RIGHT, 1) => ir_cmd("tv", "KEY_RIGHT"),
-                        (KEY_ENTER, 1) => ir_cmd("tv", "KEY_OK"),
-                        (KEY_BACKSPACE, 1) => ir_cmd("tv", "KEY_BACK"),
-                        (KEY_I, 1) => ir_cmd("tv", "KEY_INFO"),
-                        (KEY_ESC, 1) => ir_cmd("tv", "KEY_EXIT"),
-                        _ => (),
-                    },
+                    }
                 }
             }
         }
