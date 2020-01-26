@@ -38,9 +38,7 @@ maintainability
         tx, tx1...
         read_dev itself shouldnt be responsible for spawning the thread
         spotify_main should be able to go into it's own thread like everything else
-    decide what to explicitly import ('use' vs qualification)
-        more *s?
-        tooling to manage imports?
+    tooling to manage imports?
     cross-compile without docker
         ask on irc: https://gitter.im/librespot-org/spotify-connect-resources
 stability
@@ -193,6 +191,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>) {
     let mut _shift = false;
     let mut _alt = false;
     let mut mode = Mode::Normal;
+    let mut idle = true;
 
     // wait to receive Spirc
     let spirc = txs
@@ -204,174 +203,187 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>) {
         if let EventCode::EV_KEY(k) = e.event_code {
             // println!("{:?},  {:?}", k, e.value); //TODO arg for printing this sort of thing
             match (&k, e.value) {
+                // stuff that happens in all modes
                 (KEY_LEFTCTRL, 1) => ctrl = true,
                 (KEY_RIGHTCTRL, 1) => ctrl = true,
                 (KEY_LEFTSHIFT, 1) => _shift = true,
                 (KEY_RIGHTSHIFT, 1) => _shift = true,
                 (KEY_LEFTALT, 1) => _alt = true,
-                (KEY_RIGHTALT, 1) => _alt = true,
                 (KEY_LEFTCTRL, 0) => ctrl = false,
                 (KEY_RIGHTCTRL, 0) => ctrl = false,
                 (KEY_LEFTSHIFT, 0) => _shift = false,
                 (KEY_RIGHTSHIFT, 0) => _shift = false,
                 (KEY_LEFTALT, 0) => _alt = false,
-                (KEY_RIGHTALT, 0) => _alt = false,
+                (KEY_RIGHTALT, 1) => {
+                    for dev in ["Keyboard", "Consumer Control", "System Control"].iter() {
+                        let action = if idle { "disable" } else { "enable" };
+                        let full_dev = String::from("Keyboard K380 ") + dev;
+                        Command::new("xinput")
+                            .arg(action)
+                            .arg(full_dev)
+                            .output()
+                            .unwrap();
+                    }
+                    idle = !idle
+                }
                 _ => (),
             }
-            match mode {
-                Mode::Normal => {
-                    match (&k, e.value) {
-                        (KEY_T, 1) => mode = Mode::TV,
-                        (KEY_P, 1) => {
-                            ir_cmd("stereo", "KEY_POWER");
-                            sleep(Duration::from_secs(1));
-                            ir_cmd("stereo", "KEY_TAPE");
+            if !idle {
+                match mode {
+                    Mode::Normal => {
+                        match (&k, e.value) {
+                            (KEY_T, 1) => mode = Mode::TV,
+                            (KEY_P, 1) => {
+                                ir_cmd("stereo", "KEY_POWER");
+                                sleep(Duration::from_secs(1));
+                                ir_cmd("stereo", "KEY_TAPE");
+                            }
+                            (KEY_VOLUMEUP, 1) => ir_cmd("stereo", "KEY_VOLUMEUP"),
+                            (KEY_VOLUMEDOWN, 1) => ir_cmd("stereo", "KEY_VOLUMEDOWN"),
+                            (KEY_MUTE, 1) => ir_cmd("stereo", "muting"),
+                            (KEY_PLAYPAUSE, 1) => spirc.play_pause(),
+                            (KEY_PREVIOUSSONG, 1) => spirc.prev(),
+                            (KEY_NEXTSONG, 1) => spirc.next(),
+                            (KEY_LEFT, _) => {
+                                //TODO don't trigger on 'Released' (wait for 'or patterns'?)
+                                hsbk = HSBK {
+                                    hue: if ctrl {
+                                        hsbk.hue.wrapping_sub(4096)
+                                    } else {
+                                        hsbk.hue.wrapping_sub(256)
+                                    },
+                                    ..hsbk
+                                };
+                                set_hsbk(&lifx_sock, lifx_target, hsbk);
+                            }
+                            (KEY_RIGHT, _) => {
+                                hsbk = HSBK {
+                                    hue: if ctrl {
+                                        hsbk.hue.wrapping_add(4096)
+                                    } else {
+                                        hsbk.hue.wrapping_add(256)
+                                    },
+                                    ..hsbk
+                                };
+                                set_hsbk(&lifx_sock, lifx_target, hsbk);
+                            }
+                            (KEY_EQUAL, _) => {
+                                hsbk = HSBK {
+                                    saturation: if ctrl {
+                                        65535
+                                    } else {
+                                        hsbk.saturation.checked_add(1024).unwrap_or(65535)
+                                    },
+                                    ..hsbk
+                                };
+                                set_hsbk(&lifx_sock, lifx_target, hsbk);
+                            }
+                            (KEY_MINUS, _) => {
+                                hsbk = HSBK {
+                                    saturation: if ctrl {
+                                        0
+                                    } else {
+                                        hsbk.saturation.checked_sub(1024).unwrap_or(0)
+                                    },
+                                    ..hsbk
+                                };
+                                set_hsbk(&lifx_sock, lifx_target, hsbk);
+                            }
+                            (KEY_UP, _) => {
+                                hsbk = HSBK {
+                                    brightness: if ctrl {
+                                        65535
+                                    } else {
+                                        hsbk.brightness.checked_add(1024).unwrap_or(65535)
+                                    },
+                                    ..hsbk
+                                };
+                                set_hsbk(&lifx_sock, lifx_target, hsbk);
+                            }
+                            (KEY_DOWN, _) => {
+                                hsbk = HSBK {
+                                    brightness: if ctrl {
+                                        0
+                                    } else {
+                                        hsbk.brightness.checked_sub(1024).unwrap_or(0)
+                                    },
+                                    ..hsbk
+                                };
+                                set_hsbk(&lifx_sock, lifx_target, hsbk);
+                            }
+                            (KEY_LEFTBRACE, _) => {
+                                hsbk = HSBK {
+                                    kelvin: if ctrl {
+                                        9000
+                                    } else {
+                                        std::cmp::min(hsbk.kelvin + 65, 9000)
+                                    },
+                                    ..hsbk
+                                };
+                                set_hsbk(&lifx_sock, lifx_target, hsbk);
+                            }
+                            (KEY_RIGHTBRACE, _) => {
+                                hsbk = HSBK {
+                                    kelvin: if ctrl {
+                                        2500
+                                    } else {
+                                        std::cmp::max(hsbk.kelvin - 65, 2500)
+                                    },
+                                    ..hsbk
+                                };
+                                set_hsbk(&lifx_sock, lifx_target, hsbk);
+                            }
+                            _ => (),
                         }
-                        (KEY_VOLUMEUP, 1) => ir_cmd("stereo", "KEY_VOLUMEUP"),
-                        (KEY_VOLUMEDOWN, 1) => ir_cmd("stereo", "KEY_VOLUMEDOWN"),
-                        (KEY_MUTE, 1) => ir_cmd("stereo", "muting"),
-                        (KEY_PLAYPAUSE, 1) => spirc.play_pause(),
-                        (KEY_PREVIOUSSONG, 1) => spirc.prev(),
-                        (KEY_NEXTSONG, 1) => spirc.next(),
-                        (KEY_LEFT, _) => {
-                            //TODO don't trigger on 'Released' (wait for 'or patterns'?)
-                            hsbk = HSBK {
-                                hue: if ctrl {
-                                    hsbk.hue.wrapping_sub(4096)
-                                } else {
-                                    hsbk.hue.wrapping_sub(256)
-                                },
-                                ..hsbk
-                            };
-                            set_hsbk(&lifx_sock, lifx_target, hsbk);
+                    }
+                    Mode::TV => match (&k, e.value) {
+                        (KEY_T, 1) => mode = Mode::Normal,
+                        (KEY_SPACE, 1) => {
+                            ir_cmd("tv", "KEY_AUX");
+                            sleep(Duration::from_millis(300));
+                            ir_cmd("tv", "KEY_AUX");
+                            sleep(Duration::from_millis(300));
+                            ir_cmd("tv", "KEY_OK");
                         }
-                        (KEY_RIGHT, _) => {
-                            hsbk = HSBK {
-                                hue: if ctrl {
-                                    hsbk.hue.wrapping_add(4096)
-                                } else {
-                                    hsbk.hue.wrapping_add(256)
-                                },
-                                ..hsbk
-                            };
-                            set_hsbk(&lifx_sock, lifx_target, hsbk);
+                        (KEY_P, 1) => ir_cmd("tv", "KEY_POWER"),
+                        (KEY_1, 1) => {
+                            let dev = if ctrl { "switcher" } else { "tv" };
+                            ir_cmd(dev, "KEY_1")
                         }
-                        (KEY_EQUAL, _) => {
-                            hsbk = HSBK {
-                                saturation: if ctrl {
-                                    65535
-                                } else {
-                                    hsbk.saturation.checked_add(1024).unwrap_or(65535)
-                                },
-                                ..hsbk
-                            };
-                            set_hsbk(&lifx_sock, lifx_target, hsbk);
+                        (KEY_2, 1) => {
+                            let dev = if ctrl { "switcher" } else { "tv" };
+                            ir_cmd(dev, "KEY_2")
                         }
-                        (KEY_MINUS, _) => {
-                            hsbk = HSBK {
-                                saturation: if ctrl {
-                                    0
-                                } else {
-                                    hsbk.saturation.checked_sub(1024).unwrap_or(0)
-                                },
-                                ..hsbk
-                            };
-                            set_hsbk(&lifx_sock, lifx_target, hsbk);
+                        (KEY_3, 1) => {
+                            let dev = if ctrl { "switcher" } else { "tv" };
+                            ir_cmd(dev, "KEY_3")
                         }
-                        (KEY_UP, _) => {
-                            hsbk = HSBK {
-                                brightness: if ctrl {
-                                    65535
-                                } else {
-                                    hsbk.brightness.checked_add(1024).unwrap_or(65535)
-                                },
-                                ..hsbk
-                            };
-                            set_hsbk(&lifx_sock, lifx_target, hsbk);
-                        }
-                        (KEY_DOWN, _) => {
-                            hsbk = HSBK {
-                                brightness: if ctrl {
-                                    0
-                                } else {
-                                    hsbk.brightness.checked_sub(1024).unwrap_or(0)
-                                },
-                                ..hsbk
-                            };
-                            set_hsbk(&lifx_sock, lifx_target, hsbk);
-                        }
-                        (KEY_LEFTBRACE, _) => {
-                            hsbk = HSBK {
-                                kelvin: if ctrl {
-                                    9000
-                                } else {
-                                    std::cmp::min(hsbk.kelvin + 65, 9000)
-                                },
-                                ..hsbk
-                            };
-                            set_hsbk(&lifx_sock, lifx_target, hsbk);
-                        }
-                        (KEY_RIGHTBRACE, _) => {
-                            hsbk = HSBK {
-                                kelvin: if ctrl {
-                                    2500
-                                } else {
-                                    std::cmp::max(hsbk.kelvin - 65, 2500)
-                                },
-                                ..hsbk
-                            };
-                            set_hsbk(&lifx_sock, lifx_target, hsbk);
-                        }
+                        (KEY_4, 1) => ir_cmd("tv", "KEY_4"),
+                        (KEY_5, 1) => ir_cmd("tv", "KEY_5"),
+                        (KEY_6, 1) => ir_cmd("tv", "KEY_6"),
+                        (KEY_7, 1) => ir_cmd("tv", "KEY_7"),
+                        (KEY_8, 1) => ir_cmd("tv", "KEY_8"),
+                        (KEY_9, 1) => ir_cmd("tv", "KEY_9"),
+                        (KEY_0, 1) => ir_cmd("tv", "KEY_0"),
+                        (KEY_VOLUMEUP, 1) => ir_cmd("tv", "KEY_VOLUMEUP"),
+                        (KEY_VOLUMEDOWN, 1) => ir_cmd("tv", "KEY_VOLUMEDOWN"),
+                        (KEY_MUTE, 1) => ir_cmd("tv", "KEY_MUTE"),
+                        (KEY_COMMA, 1) => ir_cmd("tv", "KEY_CHANNELDOWN"),
+                        (KEY_DOT, 1) => ir_cmd("tv", "KEY_CHANNELUP"),
+                        (KEY_S, 1) => ir_cmd("tv", "KEY_SETUP"),
+                        (KEY_G, 1) => ir_cmd("tv", "KEY_G"),
+                        (KEY_Q, 1) => ir_cmd("tv", "KEY_MENU"),
+                        (KEY_UP, 1) => ir_cmd("tv", "KEY_UP"),
+                        (KEY_DOWN, 1) => ir_cmd("tv", "KEY_DOWN"),
+                        (KEY_LEFT, 1) => ir_cmd("tv", "KEY_LEFT"),
+                        (KEY_RIGHT, 1) => ir_cmd("tv", "KEY_RIGHT"),
+                        (KEY_ENTER, 1) => ir_cmd("tv", "KEY_OK"),
+                        (KEY_BACKSPACE, 1) => ir_cmd("tv", "KEY_BACK"),
+                        (KEY_I, 1) => ir_cmd("tv", "KEY_INFO"),
+                        (KEY_ESC, 1) => ir_cmd("tv", "KEY_EXIT"),
                         _ => (),
-                    }
+                    },
                 }
-                Mode::TV => match (&k, e.value) {
-                    (KEY_T, 1) => mode = Mode::Normal,
-                    (KEY_SPACE, 1) => {
-                        ir_cmd("tv", "KEY_AUX");
-                        sleep(Duration::from_millis(300));
-                        ir_cmd("tv", "KEY_AUX");
-                        sleep(Duration::from_millis(300));
-                        ir_cmd("tv", "KEY_OK");
-                    }
-                    (KEY_P, 1) => ir_cmd("tv", "KEY_POWER"),
-                    (KEY_1, 1) => {
-                        let dev = if ctrl { "switcher" } else { "tv" };
-                        ir_cmd(dev, "KEY_1")
-                    }
-                    (KEY_2, 1) => {
-                        let dev = if ctrl { "switcher" } else { "tv" };
-                        ir_cmd(dev, "KEY_2")
-                    }
-                    (KEY_3, 1) => {
-                        let dev = if ctrl { "switcher" } else { "tv" };
-                        ir_cmd(dev, "KEY_3")
-                    }
-                    (KEY_4, 1) => ir_cmd("tv", "KEY_4"),
-                    (KEY_5, 1) => ir_cmd("tv", "KEY_5"),
-                    (KEY_6, 1) => ir_cmd("tv", "KEY_6"),
-                    (KEY_7, 1) => ir_cmd("tv", "KEY_7"),
-                    (KEY_8, 1) => ir_cmd("tv", "KEY_8"),
-                    (KEY_9, 1) => ir_cmd("tv", "KEY_9"),
-                    (KEY_0, 1) => ir_cmd("tv", "KEY_0"),
-                    (KEY_VOLUMEUP, 1) => ir_cmd("tv", "KEY_VOLUMEUP"),
-                    (KEY_VOLUMEDOWN, 1) => ir_cmd("tv", "KEY_VOLUMEDOWN"),
-                    (KEY_MUTE, 1) => ir_cmd("tv", "KEY_MUTE"),
-                    (KEY_COMMA, 1) => ir_cmd("tv", "KEY_CHANNELDOWN"),
-                    (KEY_DOT, 1) => ir_cmd("tv", "KEY_CHANNELUP"),
-                    (KEY_S, 1) => ir_cmd("tv", "KEY_SETUP"),
-                    (KEY_G, 1) => ir_cmd("tv", "KEY_G"),
-                    (KEY_Q, 1) => ir_cmd("tv", "KEY_MENU"),
-                    (KEY_UP, 1) => ir_cmd("tv", "KEY_UP"),
-                    (KEY_DOWN, 1) => ir_cmd("tv", "KEY_DOWN"),
-                    (KEY_LEFT, 1) => ir_cmd("tv", "KEY_LEFT"),
-                    (KEY_RIGHT, 1) => ir_cmd("tv", "KEY_RIGHT"),
-                    (KEY_ENTER, 1) => ir_cmd("tv", "KEY_OK"),
-                    (KEY_BACKSPACE, 1) => ir_cmd("tv", "KEY_BACK"),
-                    (KEY_I, 1) => ir_cmd("tv", "KEY_INFO"),
-                    (KEY_ESC, 1) => ir_cmd("tv", "KEY_EXIT"),
-                    _ => (),
-                },
             }
         }
     }
