@@ -249,7 +249,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>, debug:
     let mut _shift = false;
     let mut _alt = false;
     let mut mode = Mode::Normal;
-    let mut idle = true;
+    let mut idle = false;
 
     // wait to receive Spirc
     let spirc = txs
