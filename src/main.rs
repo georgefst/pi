@@ -38,11 +38,10 @@ maintainability
         tx, tx1...
         read_dev itself shouldnt be responsible for spawning the thread
         spotify_main should be able to go into it's own thread like everything else
+        review all uses of 'clone', 'move', '&' etc.
     tooling to manage imports?
     cross-compile without docker
         ask on irc: https://gitter.im/librespot-org/spotify-connect-resources
-stability
-    too many unwraps (particularly in utility functions)
 features
     train
     weather
@@ -60,6 +59,8 @@ struct Opts {
     spotify_password: String,
     #[clap(short = "e")]
     evdev_port: u16, // for receiving events over LAN
+    #[clap(short = "d", long = "debug")]
+    debug: bool, // currently just causes all events to be printed
 }
 
 // useful constants
@@ -76,9 +77,12 @@ fn main() {
     let (tx, rx) = channel();
 
     // read from existing devices
-    for r in read_dir(&EVDEV_DIR).unwrap() {
-        let p = r.unwrap().path();
-        read_dev(tx.clone(), p);
+    for dir_entry in read_dir(&EVDEV_DIR).unwrap() {
+        let path = dir_entry.unwrap().path();
+        if !path.is_dir() {
+            println!("Found device: {}", path.to_str().unwrap());
+            read_dev(tx.clone(), path);
+        }
     }
 
     // watch for new devices
@@ -90,51 +94,77 @@ fn main() {
         loop {
             let events = inotify.read_events_blocking(&mut buffer).unwrap();
             for event in events {
-                // println!("{:?}", event);
                 if !event.mask.contains(EventMask::ISDIR) {
-                    //TODO cf. my Haskell lib for more principled solution
-                    sleep(Duration::from_millis(300)); // sleep to avoid permission error
-                    let p = PathBuf::from(EVDEV_DIR).join(event.name.unwrap().to_str().unwrap());
-                    read_dev(tx1.clone(), p);
+                    if let Some(name) = event.name {
+                        let path = name.to_str().unwrap();
+                        println!("Found new device: {}", path);
+                        //TODO cf. my Haskell lib for more principled solution
+                        sleep(Duration::from_millis(300)); // sleep to avoid permission error
+                        let full_path = PathBuf::from(EVDEV_DIR).join(path);
+                        read_dev(tx1.clone(), full_path);
+                    }
                 }
             }
         }
     });
 
     // watch for network events
-    let evdev_port = opts.evdev_port.clone();
+    let evdev_port = opts.evdev_port;
     thread::spawn(move || {
         //TODO security
-        let s = &UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], evdev_port))).unwrap();
+        let sock = &UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], evdev_port))).unwrap();
+        let mut buf = [0; 2];
         loop {
-            let mut buf = [0; 2];
-            let (_n_bytes, _addr) = s.recv_from(&mut buf).unwrap();
-            let k = int_to_ev_key(buf[0] as u32).unwrap();
-            let c = EventCode::EV_KEY(k);
-            let t = TimeVal::new(0, 0);
-            let ev = InputEvent::new(&t, &c, buf[1] as i32);
-            tx.clone().send(ev).unwrap();
+            match sock.recv_from(&mut buf) {
+                Ok((_n_bytes, _addr)) => {
+                    if let Some(k) = int_to_ev_key(buf[0] as u32) {
+                        let c = EventCode::EV_KEY(k);
+                        let t = TimeVal::new(0, 0);
+                        let ev = InputEvent::new(&t, &c, buf[1] as i32);
+                        tx.clone().send(ev).unwrap();
+                    } else {
+                        println!(
+                            "Int received over network is not a valid key code: {:?}",
+                            buf[0]
+                        )
+                    }
+                }
+                Err(e) => println!("Received invalid network message: {:?} ({:?})", buf, e),
+            }
         }
     });
 
+    let debug = opts.debug;
     thread::spawn(move || {
-        respond_to_events(rx, rxs);
+        respond_to_events(rx, rxs, debug);
     });
 
     main_spotify(txs, opts.spotify_device_name, opts.spotify_password);
 }
 
 // create a new thread to read events from the device at p, and send them on s
-fn read_dev(s: Sender<InputEvent>, p: PathBuf) {
-    thread::spawn(move || {
-        let file = File::open(p).unwrap();
-        let dev = Device::new_from_fd(file).unwrap();
-        loop {
-            let (_, event) = dev
-                .next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING)
-                .unwrap();
-            s.send(event).unwrap();
-        }
+fn read_dev(tx: Sender<InputEvent>, path: PathBuf) {
+    let p = path.clone();
+    thread::spawn(move || match File::open(path) {
+        Ok(file) => match Device::new_from_fd(file) {
+            Ok(dev) => loop {
+                match dev.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING) {
+                    Ok((_, event)) => tx.send(event).unwrap(),
+                    Err(e) => {
+                        println!(
+                            "Failed to get next event, abandoning device: {} ({:?})",
+                            p.to_str().unwrap(),
+                            e
+                        );
+                        break;
+                    }
+                }
+            },
+            Err(e) => {
+                println!("Not an evdev device: {} ({:?})", p.to_str().unwrap(), e);
+            }
+        },
+        Err(e) => println!("Couldn't open file: {} ({:?})", p.to_str().unwrap(), e),
     });
 }
 
@@ -149,9 +179,9 @@ fn ir_cmd(dev: &str, cmd: &str) {
 }
 
 // LIFX helpers, until there's a complete high-level LAN API in Rust
-fn lifx_send(sock: &UdpSocket, target: SocketAddr, msg: Message) {
+fn lifx_send(sock: &UdpSocket, target: SocketAddr, msg: Message) -> Result<(), io::Error> {
     let raw = RawMessage::build(&Default::default(), msg).unwrap();
-    sock.send_to(&raw.pack().unwrap(), &target).unwrap();
+    sock.send_to(&raw.pack().unwrap(), &target).map(|_| ())
 }
 fn set_hsbk(sock: &UdpSocket, target: SocketAddr, hsbk: HSBK) {
     let msg = Message::LightSetColor {
@@ -159,15 +189,14 @@ fn set_hsbk(sock: &UdpSocket, target: SocketAddr, hsbk: HSBK) {
         duration: 0,
         reserved: 0,
     };
-    lifx_send(sock, target, msg)
+    lifx_send(sock, target, msg).unwrap_or_else(|e| println!("Failed to set HSBK. ({:?})", e))
 }
-// fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK> {
 fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Error> {
     let mut buf = [0; 88];
-    lifx_send(sock, target, Message::LightGet);
+    lifx_send(sock, target, Message::LightGet)?;
     let (_n_bytes, _addr) = sock.recv_from(&mut buf)?;
     let raw = RawMessage::unpack(&buf)?;
-    let msg = Message::from_raw(&raw).unwrap();
+    let msg = Message::from_raw(&raw)?;
     if let Message::LightState { color: hsbk, .. } = msg {
         Ok(hsbk)
     } else {
@@ -178,7 +207,7 @@ fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Err
 }
 
 // read from 'rx', responding to events
-fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>) {
+fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>, debug: bool) {
     let lifx_sock = UdpSocket::bind("0.0.0.0:56700").unwrap();
     lifx_sock
         .set_read_timeout(Some(Duration::from_secs(3)))
@@ -186,7 +215,18 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>) {
     let lifx_target: SocketAddr = "192.168.1.188:56700".parse().unwrap();
 
     // initialise state
-    let mut hsbk = get_hsbk(&lifx_sock, lifx_target).unwrap();
+    let mut hsbk = get_hsbk(&lifx_sock, lifx_target).unwrap_or_else(|e| {
+        println!(
+            "Failed to get HSBK from light - initialising all fields to 0. ({:?})",
+            e
+        );
+        HSBK {
+            brightness: 0,
+            hue: 0,
+            kelvin: 0,
+            saturation: 0,
+        }
+    });
     let mut ctrl = false;
     let mut _shift = false;
     let mut _alt = false;
@@ -196,12 +236,14 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>) {
     // wait to receive Spirc
     let spirc = txs
         .recv_timeout(Duration::from_secs(3))
-        .expect("timed out waiting for Spirc object");
+        .expect("Timed out waiting for Spirc object.");
 
     loop {
         let e = rx.recv().unwrap();
         if let EventCode::EV_KEY(k) = e.event_code {
-            // println!("{:?},  {:?}", k, e.value); //TODO arg for printing this sort of thing
+            if debug {
+                println!("{:?},  {:?}", k, e.value);
+            }
             match (&k, e.value) {
                 // stuff that happens in all modes
                 (KEY_LEFTCTRL, 1) => ctrl = true,
