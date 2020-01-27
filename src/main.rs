@@ -40,6 +40,8 @@ maintainability
         read_dev itself shouldnt be responsible for spawning the thread
         spotify_main should be able to go into it's own thread like everything else
         review all uses of 'clone', 'move', '&' etc.
+        have 'handle_cmd' actually take a Command
+            when debugging, print the command text
     tooling to manage imports?
     better event names in lircd.conf
     cross-compile without docker
@@ -197,9 +199,7 @@ fn handle_cmd(res: io::Result<std::process::Output>, cmd_name: &str, extra: &str
 // send off a command to a device, based on 'lircd.conf'
 fn ir_cmd(dev: &str, cmd: &str, debug: bool) {
     let res = Command::new("irsend")
-        .arg("SEND_ONCE")
-        .arg(dev)
-        .arg(cmd)
+        .args(&["SEND_ONCE", dev, cmd])
         .output();
     handle_cmd(res, "send IR command", cmd, debug);
 }
@@ -309,10 +309,10 @@ fn respond_to_events(
                                         if phys1 == phys {
                                             let dev_name = dev.name().unwrap();
                                             let res = Command::new("xinput")
-                                                .arg(action)
-                                                .arg(dev_name)
+                                                .args(&[action, dev_name])
                                                 .output();
-                                            let cmd_name = String::from(action) + (" xinput device");
+                                            let cmd_name =
+                                                String::from(action) + (" xinput device");
                                             handle_cmd(res, &cmd_name, dev_name, debug);
                                         }
                                     }
