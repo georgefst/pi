@@ -32,6 +32,9 @@ use std::time::Duration;
 use futures::sync::mpsc::UnboundedReceiver;
 use tokio_core::reactor::Core;
 
+use KeyEventType::*;
+use Mode::*;
+
 /* TODO
 
 maintainability
@@ -40,6 +43,9 @@ maintainability
         read_dev itself shouldnt be responsible for spawning the thread
         spotify_main should be able to go into it's own thread like everything else
         review all uses of 'clone', 'move', '&' etc.
+        mode_transition closure
+            avoids repeated code in printing old and new mode
+            needs to change mutable variable, ideally without it being explicitly passed in
         have 'handle_cmd' actually take a Command
             when debugging, print the command text
     tooling to manage imports?
@@ -208,22 +214,21 @@ fn handle_cmd(res: io::Result<std::process::Output>, cmd_name: &str, extra: &str
     }
 }
 
-// send off a command to a device, based on 'lircd.conf'
-fn ir_cmd(dev: &str, cmd: &str, debug: bool) {
+// send off commands to a device, based on 'lircd.conf'
+fn ir_cmd(dev: &str, cmd: &str, event_type: KeyEventType, debug: bool) {
+    let send_type = match event_type {
+        Pressed => "SEND_START",
+        Released => "SEND_STOP",
+        Repeated => {
+            return (); // do nothing
+        }
+    };
+    let res = Command::new("irsend").args(&[send_type, dev, cmd]).output();
+    handle_cmd(res, "send IR command", cmd, debug);
+}
+fn ir_cmd_once(dev: &str, cmd: &str, debug: bool) {
     let res = Command::new("irsend")
         .args(&["SEND_ONCE", dev, cmd])
-        .output();
-    handle_cmd(res, "send IR command", cmd, debug);
-}
-fn ir_cmd_start(dev: &str, cmd: &str, debug: bool) {
-    let res = Command::new("irsend")
-        .args(&["SEND_START", dev, cmd])
-        .output();
-    handle_cmd(res, "send IR command", cmd, debug);
-}
-fn ir_cmd_stop(dev: &str, cmd: &str, debug: bool) {
-    let res = Command::new("irsend")
-        .args(&["SEND_STOP", dev, cmd])
         .output();
     handle_cmd(res, "send IR command", cmd, debug);
 }
@@ -280,28 +285,29 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
     let mut ctrl = false;
     let mut _shift = false;
     let mut _alt = false;
-    let mut mode = Mode::Normal;
+    let mut mode = Normal;
     let mut ignored: HashSet<String> = HashSet::new(); // MAC addresses of devices currently being ignored
 
     loop {
         let (e, phys) = rx.recv().unwrap();
         if let EventCode::EV_KEY(k) = e.event_code {
+            let ev_type = KeyEventType::from(e.value);
             if debug {
-                println!("{:?},  {:?}", k, e.value);
+                println!("{:?},  {:?}", k, ev_type);
             }
-            match (&k, e.value) {
+            match (&k, ev_type) {
                 // stuff that happens in all modes
-                (KEY_LEFTCTRL, 1) => ctrl = true,
-                (KEY_RIGHTCTRL, 1) => ctrl = true,
-                (KEY_LEFTSHIFT, 1) => _shift = true,
-                (KEY_RIGHTSHIFT, 1) => _shift = true,
-                (KEY_LEFTALT, 1) => _alt = true,
-                (KEY_LEFTCTRL, 0) => ctrl = false,
-                (KEY_RIGHTCTRL, 0) => ctrl = false,
-                (KEY_LEFTSHIFT, 0) => _shift = false,
-                (KEY_RIGHTSHIFT, 0) => _shift = false,
-                (KEY_LEFTALT, 0) => _alt = false,
-                (KEY_RIGHTALT, 1) => {
+                (KEY_LEFTCTRL, Pressed) => ctrl = true,
+                (KEY_RIGHTCTRL, Pressed) => ctrl = true,
+                (KEY_LEFTSHIFT, Pressed) => _shift = true,
+                (KEY_RIGHTSHIFT, Pressed) => _shift = true,
+                (KEY_LEFTALT, Pressed) => _alt = true,
+                (KEY_LEFTCTRL, Released) => ctrl = false,
+                (KEY_RIGHTCTRL, Released) => ctrl = false,
+                (KEY_LEFTSHIFT, Released) => _shift = false,
+                (KEY_RIGHTSHIFT, Released) => _shift = false,
+                (KEY_LEFTALT, Released) => _alt = false,
+                (KEY_RIGHTALT, Pressed) => {
                     if let Some(phys) = phys.clone() {
                         let phys0 = phys.clone();
                         let action = if ignored.contains(&phys) {
@@ -341,23 +347,24 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
             let phys = phys.clone();
             if phys.map_or(true, |phys| !ignored.contains(&phys)) {
                 match mode {
-                    Mode::Normal => {
-                        let stereo = |cmd: &str| ir_cmd("stereo", cmd, debug);
-                        match (&k, e.value) {
-                            (KEY_T, 1) => mode = Mode::TV,
-                            (KEY_P, 1) => {
-                                stereo("KEY_POWER");
-                                sleep(Duration::from_secs(1));
-                                stereo("KEY_TAPE");
+                    Normal => {
+                        let stereo = |cmd: &str| ir_cmd("stereo", cmd, ev_type, debug);
+                        match (&k, ev_type) {
+                            (KEY_T, Pressed) => {
+                                println!("Entering TV mode");
+                                mode = TV;
                             }
-                            (KEY_VOLUMEUP, 1) => ir_cmd_start("stereo", "KEY_VOLUMEUP", debug),
-                            (KEY_VOLUMEUP, 0) => ir_cmd_stop("stereo", "KEY_VOLUMEUP", debug),
-                            (KEY_VOLUMEDOWN, 1) => ir_cmd_start("stereo", "KEY_VOLUMEDOWN", debug),
-                            (KEY_VOLUMEDOWN, 0) => ir_cmd_stop("stereo", "KEY_VOLUMEDOWN", debug),
-                            (KEY_MUTE, 1) => stereo("muting"),
-                            (KEY_PLAYPAUSE, 1) => spirc.play_pause(),
-                            (KEY_PREVIOUSSONG, 1) => spirc.prev(),
-                            (KEY_NEXTSONG, 1) => spirc.next(),
+                            (KEY_P, Pressed) => {
+                                ir_cmd_once("stereo", "KEY_POWER", debug);
+                                sleep(Duration::from_secs(1));
+                                ir_cmd_once("stereo", "KEY_TAPE", debug);
+                            }
+                            (KEY_VOLUMEUP, _) => stereo("KEY_VOLUMEUP"),
+                            (KEY_VOLUMEDOWN, _) => stereo("KEY_VOLUMEDOWN"),
+                            (KEY_MUTE, _) => stereo("muting"),
+                            (KEY_PLAYPAUSE, Pressed) => spirc.play_pause(),
+                            (KEY_PREVIOUSSONG, Pressed) => spirc.prev(),
+                            (KEY_NEXTSONG, Pressed) => spirc.next(),
                             (KEY_LEFT, _) => {
                                 //TODO don't trigger on 'Released' (wait for 'or patterns'?)
                                 hsbk = HSBK {
@@ -450,66 +457,68 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
                             _ => (),
                         }
                     }
-                    Mode::TV => {
-                        let tv = |cmd: &str| ir_cmd("tv", cmd, debug);
-                        let switcher = |cmd: &str| ir_cmd("switcher", cmd, debug);
-                        match (&k, e.value) {
-                            (KEY_T, 1) => mode = Mode::Normal,
-                            (KEY_SPACE, 1) => {
+                    TV => {
+                        let tv = |cmd: &str| ir_cmd("tv", cmd, ev_type, debug);
+                        let switcher = |cmd: &str| ir_cmd("switcher", cmd, ev_type, debug);
+                        match &k {
+                            KEY_T => {
+                                if ev_type == Pressed {
+                                    println!("Entering normal mode");
+                                    mode = Normal
+                                }
+                            }
+                            KEY_SPACE => {
                                 tv("KEY_AUX");
                                 sleep(Duration::from_millis(300));
                                 tv("KEY_AUX");
                                 sleep(Duration::from_millis(300));
                                 tv("KEY_OK");
                             }
-                            (KEY_P, 1) => tv("KEY_POWER"),
-                            (KEY_1, 1) => {
+                            KEY_P => tv("KEY_POWER"),
+                            KEY_1 => {
                                 if ctrl {
                                     switcher("KEY_1")
                                 } else {
                                     tv("KEY_1")
                                 };
                             }
-                            (KEY_2, 1) => {
+                            KEY_2 => {
                                 if ctrl {
                                     switcher("KEY_2")
                                 } else {
                                     tv("KEY_2")
                                 };
                             }
-                            (KEY_3, 1) => {
+                            KEY_3 => {
                                 if ctrl {
                                     switcher("KEY_3")
                                 } else {
                                     tv("KEY_3")
                                 };
                             }
-                            (KEY_4, 1) => tv("KEY_4"),
-                            (KEY_5, 1) => tv("KEY_5"),
-                            (KEY_6, 1) => tv("KEY_6"),
-                            (KEY_7, 1) => tv("KEY_7"),
-                            (KEY_8, 1) => tv("KEY_8"),
-                            (KEY_9, 1) => tv("KEY_9"),
-                            (KEY_0, 1) => tv("KEY_0"),
-                            //TODO consider using start/stop universally
-                            (KEY_VOLUMEUP, 1) => ir_cmd_start("tv", "KEY_VOLUMEUP", debug),
-                            (KEY_VOLUMEUP, 0) => ir_cmd_stop("tv", "KEY_VOLUMEUP", debug),
-                            (KEY_VOLUMEDOWN, 1) => ir_cmd_start("tv", "KEY_VOLUMEDOWN", debug),
-                            (KEY_VOLUMEDOWN, 0) => ir_cmd_stop("tv", "KEY_VOLUMEDOWN", debug),
-                            (KEY_MUTE, 1) => tv("KEY_MUTE"),
-                            (KEY_COMMA, 1) => tv("KEY_CHANNELDOWN"),
-                            (KEY_DOT, 1) => tv("KEY_CHANNELUP"),
-                            (KEY_S, 1) => tv("KEY_SETUP"),
-                            (KEY_G, 1) => tv("KEY_G"),
-                            (KEY_Q, 1) => tv("KEY_MENU"),
-                            (KEY_UP, 1) => tv("KEY_UP"),
-                            (KEY_DOWN, 1) => tv("KEY_DOWN"),
-                            (KEY_LEFT, 1) => tv("KEY_LEFT"),
-                            (KEY_RIGHT, 1) => tv("KEY_RIGHT"),
-                            (KEY_ENTER, 1) => tv("KEY_OK"),
-                            (KEY_BACKSPACE, 1) => tv("KEY_BACK"),
-                            (KEY_I, 1) => tv("KEY_INFO"),
-                            (KEY_ESC, 1) => tv("KEY_EXIT"),
+                            KEY_4 => tv("KEY_4"),
+                            KEY_5 => tv("KEY_5"),
+                            KEY_6 => tv("KEY_6"),
+                            KEY_7 => tv("KEY_7"),
+                            KEY_8 => tv("KEY_8"),
+                            KEY_9 => tv("KEY_9"),
+                            KEY_0 => tv("KEY_0"),
+                            KEY_VOLUMEUP => tv("KEY_VOLUMEUP"),
+                            KEY_VOLUMEDOWN => tv("KEY_VOLUMEDOWN"),
+                            KEY_MUTE => tv("KEY_MUTE"),
+                            KEY_COMMA => tv("KEY_CHANNELDOWN"),
+                            KEY_DOT => tv("KEY_CHANNELUP"),
+                            KEY_S => tv("KEY_SETUP"),
+                            KEY_G => tv("KEY_G"),
+                            KEY_Q => tv("KEY_MENU"),
+                            KEY_UP => tv("KEY_UP"),
+                            KEY_DOWN => tv("KEY_DOWN"),
+                            KEY_LEFT => tv("KEY_LEFT"),
+                            KEY_RIGHT => tv("KEY_RIGHT"),
+                            KEY_ENTER => tv("KEY_OK"),
+                            KEY_BACKSPACE => tv("KEY_BACK"),
+                            KEY_I => tv("KEY_INFO"),
+                            KEY_ESC => tv("KEY_EXIT"),
                             _ => (),
                         }
                     }
@@ -565,9 +574,27 @@ fn spotify_setup(
     (spirc, spirc_task, evs)
 }
 
-// data structures
+// program mode
 #[derive(Debug)]
 enum Mode {
     Normal,
     TV,
+}
+
+//TODO suggest this be used in evdev library
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum KeyEventType {
+    Released,
+    Pressed,
+    Repeated,
+}
+impl KeyEventType {
+    fn from(i: i32) -> KeyEventType {
+        match i {
+            0 => Released,
+            1 => Pressed,
+            2 => Repeated,
+            n => panic!("Invalid key event type: {}", n),
+        }
+    }
 }
