@@ -349,15 +349,16 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
                 match mode {
                     Normal => {
                         let stereo = |cmd: &str| ir_cmd("stereo", cmd, ev_type, debug);
+                        let stereo_once = |cmd: &str| ir_cmd_once("stereo", cmd, debug);
                         match (&k, ev_type) {
                             (KEY_T, Pressed) => {
                                 println!("Entering TV mode");
                                 mode = TV;
                             }
                             (KEY_P, Pressed) => {
-                                ir_cmd_once("stereo", "KEY_POWER", debug);
+                                stereo_once("KEY_POWER");
                                 sleep(Duration::from_secs(1));
-                                ir_cmd_once("stereo", "KEY_TAPE", debug);
+                                stereo_once("KEY_TAPE");
                             }
                             (KEY_VOLUMEUP, _) => stereo("KEY_VOLUMEUP"),
                             (KEY_VOLUMEDOWN, _) => stereo("KEY_VOLUMEDOWN"),
