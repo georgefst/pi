@@ -42,7 +42,6 @@ maintainability
         review all uses of 'clone', 'move', '&' etc.
     tooling to manage imports?
     better event names in lircd.conf
-    factor out common error-handling logic for 'Command's (IR and xinput)
     cross-compile without docker
         ask on irc: https://gitter.im/librespot-org/spotify-connect-resources
 features
@@ -173,30 +172,36 @@ fn read_dev(tx: Sender<(InputEvent, Option<String>)>, path: PathBuf) {
     });
 }
 
-// send off a command to a device, based on 'lircd.conf'
-fn ir_cmd(dev: &str, cmd: &str, debug: bool) {
-    match Command::new("irsend")
-        .arg("SEND_ONCE")
-        .arg(dev)
-        .arg(cmd)
-        .output()
-    {
+// print errors (and, if debug, output) to stdout
+// takes a description of the command, and extra info (eg. device name)
+fn handle_cmd(res: io::Result<std::process::Output>, cmd_name: &str, extra: &str, debug: bool) {
+    match res {
         Ok(out) => {
-            let o = out.clone();
             let err = out.stderr;
             if !err.is_empty() {
                 print!(
-                    "Failed to send IR command: {}\n{}",
-                    cmd,
+                    "Failed to {}: {}\n{}",
+                    cmd_name,
+                    extra,
                     String::from_utf8(err).unwrap()
                 )
             }
             if debug {
-                print!("{}", String::from_utf8(o.stdout).unwrap());
+                print!("{}", String::from_utf8(out.stdout).unwrap());
             }
         }
-        Err(e) => println!("Failed to send IR command: {} ({:?})", cmd, e),
+        Err(e) => println!("Failed to {}: {} ({:?})", cmd_name, extra, e),
     }
+}
+
+// send off a command to a device, based on 'lircd.conf'
+fn ir_cmd(dev: &str, cmd: &str, debug: bool) {
+    let res = Command::new("irsend")
+        .arg("SEND_ONCE")
+        .arg(dev)
+        .arg(cmd)
+        .output();
+    handle_cmd(res, "send IR command", cmd, debug);
 }
 
 // LIFX helpers, until there's a complete high-level LAN API in Rust
@@ -285,11 +290,13 @@ fn respond_to_events(
                     if let Some(phys) = phys.clone() {
                         let phys0 = phys.clone();
                         let action = if ignored.contains(&phys) {
+                            // regain control
                             ignored.remove(&phys);
-                            "enable"
-                        } else {
-                            ignored.insert(phys);
                             "disable"
+                        } else {
+                            // pass control back to X
+                            ignored.insert(phys);
+                            "enable"
                         };
                         let phys = phys0.clone();
                         // enable, disable all devices with same MAC
@@ -301,34 +308,12 @@ fn respond_to_events(
                                     if let Some(phys1) = dev.phys() {
                                         if phys1 == phys {
                                             let dev_name = dev.name().unwrap();
-                                            match Command::new("xinput")
+                                            let res = Command::new("xinput")
                                                 .arg(action)
                                                 .arg(dev_name)
-                                                .output()
-                                            {
-                                                Ok(out) => {
-                                                    let o = out.clone();
-                                                    let err = out.stderr;
-                                                    if !err.is_empty() {
-                                                        println!(
-                                                            "Failed to {} xinput device: {}\n{}",
-                                                            action,
-                                                            dev_name,
-                                                            String::from_utf8(err).unwrap()
-                                                        );
-                                                    }
-                                                    if debug {
-                                                        print!(
-                                                            "{}",
-                                                            String::from_utf8(o.stdout).unwrap()
-                                                        );
-                                                    }
-                                                }
-                                                Err(e) => println!(
-                                                    "Failed to {} xinput device: {} ({:?})",
-                                                    action, dev_name, e
-                                                ),
-                                            }
+                                                .output();
+                                            let cmd_name = String::from(action) + (" xinput device");
+                                            handle_cmd(res, &cmd_name, dev_name, debug);
                                         }
                                     }
                                 }
