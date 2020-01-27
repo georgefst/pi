@@ -215,6 +215,18 @@ fn ir_cmd(dev: &str, cmd: &str, debug: bool) {
         .output();
     handle_cmd(res, "send IR command", cmd, debug);
 }
+fn ir_cmd_start(dev: &str, cmd: &str, debug: bool) {
+    let res = Command::new("irsend")
+        .args(&["SEND_START", dev, cmd])
+        .output();
+    handle_cmd(res, "send IR command", cmd, debug);
+}
+fn ir_cmd_stop(dev: &str, cmd: &str, debug: bool) {
+    let res = Command::new("irsend")
+        .args(&["SEND_STOP", dev, cmd])
+        .output();
+    handle_cmd(res, "send IR command", cmd, debug);
+}
 
 // LIFX helpers, until there's a complete high-level LAN API in Rust
 fn lifx_send(sock: &UdpSocket, target: SocketAddr, msg: Message) -> Result<(), io::Error> {
@@ -338,8 +350,10 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
                                 sleep(Duration::from_secs(1));
                                 stereo("KEY_TAPE");
                             }
-                            (KEY_VOLUMEUP, 1) => stereo("KEY_VOLUMEUP"),
-                            (KEY_VOLUMEDOWN, 1) => stereo("KEY_VOLUMEDOWN"),
+                            (KEY_VOLUMEUP, 1) => ir_cmd_start("stereo", "KEY_VOLUMEUP", debug),
+                            (KEY_VOLUMEUP, 0) => ir_cmd_stop("stereo", "KEY_VOLUMEUP", debug),
+                            (KEY_VOLUMEDOWN, 1) => ir_cmd_start("stereo", "KEY_VOLUMEDOWN", debug),
+                            (KEY_VOLUMEDOWN, 0) => ir_cmd_stop("stereo", "KEY_VOLUMEDOWN", debug),
                             (KEY_MUTE, 1) => stereo("muting"),
                             (KEY_PLAYPAUSE, 1) => spirc.play_pause(),
                             (KEY_PREVIOUSSONG, 1) => spirc.prev(),
@@ -477,8 +491,11 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
                             (KEY_8, 1) => tv("KEY_8"),
                             (KEY_9, 1) => tv("KEY_9"),
                             (KEY_0, 1) => tv("KEY_0"),
-                            (KEY_VOLUMEUP, 1) => tv("KEY_VOLUMEUP"),
-                            (KEY_VOLUMEDOWN, 1) => tv("KEY_VOLUMEDOWN"),
+                            //TODO consider using start/stop universally
+                            (KEY_VOLUMEUP, 1) => ir_cmd_start("tv", "KEY_VOLUMEUP", debug),
+                            (KEY_VOLUMEUP, 0) => ir_cmd_stop("tv", "KEY_VOLUMEUP", debug),
+                            (KEY_VOLUMEDOWN, 1) => ir_cmd_start("tv", "KEY_VOLUMEDOWN", debug),
+                            (KEY_VOLUMEDOWN, 0) => ir_cmd_stop("tv", "KEY_VOLUMEDOWN", debug),
                             (KEY_MUTE, 1) => tv("KEY_MUTE"),
                             (KEY_COMMA, 1) => tv("KEY_CHANNELDOWN"),
                             (KEY_DOT, 1) => tv("KEY_CHANNELUP"),
