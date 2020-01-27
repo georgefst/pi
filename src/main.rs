@@ -6,10 +6,10 @@ use librespot::connect::spirc::{Spirc, SpircTask};
 use librespot::core::authentication::Credentials;
 use librespot::core::config::{ConnectConfig, DeviceType, SessionConfig};
 use librespot::core::session::Session;
-use librespot::playback::audio_backend::{self, Sink};
+use librespot::playback::audio_backend;
 use librespot::playback::config::{Bitrate, PlayerConfig};
-use librespot::playback::mixer::{self, Mixer, MixerConfig};
-use librespot::playback::player::Player;
+use librespot::playback::mixer::{self, MixerConfig};
+use librespot::playback::player::{Player, PlayerEvent};
 use lifx_core::Message;
 use lifx_core::RawMessage;
 use lifx_core::HSBK;
@@ -22,15 +22,13 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::result::*;
 use std::sync::mpsc::{channel, Receiver, Sender};
-use std::sync::Arc;
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 
-// futures stuff - only used by the copied code from librespot
-use futures::{Async, Future, Poll, Stream};
+// futures stuff - only used by the librespot code
+use futures::sync::mpsc::UnboundedReceiver;
 use tokio_core::reactor::Core;
-use tokio_io::IoStream;
 
 /* TODO
 
@@ -46,6 +44,10 @@ maintainability
     better event names in lircd.conf
     cross-compile without docker
         ask on irc: https://gitter.im/librespot-org/spotify-connect-resources
+stability
+    spirc.shutdown() on program exit
+performance
+    ignore devices which can't perform key events
 features
     train
     weather
@@ -73,9 +75,6 @@ const EVDEV_DIR: &str = "/dev/input/";
 fn main() {
     // get data from command line args
     let opts: Opts = Opts::parse();
-
-    // channel for Spirc
-    let (txs, rxs) = channel(); //TODO doesn't need to be a channel, only set once
 
     // set up channel for keyboard events
     let (tx, rx) = channel();
@@ -138,12 +137,17 @@ fn main() {
         }
     });
 
+    let mut core = Core::new().unwrap();
+    let (spirc, spirc_task, evs) =
+        spotify_setup(opts.spotify_device_name, opts.spotify_password, &mut core);
+
     let debug = opts.debug;
     thread::spawn(move || {
-        respond_to_events(rx, rxs, debug);
+        respond_to_events(rx, spirc, debug);
     });
 
-    main_spotify(txs, opts.spotify_device_name, opts.spotify_password);
+    // run spotify
+    core.run(spirc_task).unwrap();
 }
 
 // create a new thread to read events from the device at p, and send them on s
@@ -233,11 +237,7 @@ fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Err
 }
 
 // read from 'rx', responding to events
-fn respond_to_events(
-    rx: Receiver<(InputEvent, Option<String>)>,
-    txs: Receiver<Arc<Spirc>>,
-    debug: bool,
-) {
+fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, debug: bool) {
     let lifx_sock = UdpSocket::bind("0.0.0.0:56700").unwrap();
     lifx_sock
         .set_read_timeout(Some(Duration::from_secs(3)))
@@ -262,11 +262,6 @@ fn respond_to_events(
     let mut _alt = false;
     let mut mode = Mode::Normal;
     let mut ignored: HashSet<String> = HashSet::new(); // MAC addresses of devices currently being ignored
-
-    // wait to receive Spirc
-    let spirc = txs
-        .recv_timeout(Duration::from_secs(3))
-        .expect("Timed out waiting for Spirc object.");
 
     loop {
         let (e, phys) = rx.recv().unwrap();
@@ -500,59 +495,49 @@ fn respond_to_events(
 }
 
 // create a Connect device through librespot
-fn main_spotify(txs: Sender<Arc<Spirc>>, name: String, password: String) {
-    let mut core = Core::new().unwrap();
-    let handle = core.handle();
-
-    let backend = audio_backend::find(None).expect("Invalid backend");
-
+fn spotify_setup(
+    name: String,
+    password: String,
+    core: &mut Core,
+) -> (Spirc, SpircTask, UnboundedReceiver<PlayerEvent>) {
     let mixer_name: Option<&String> = None;
-    let mixer = mixer::find(mixer_name).expect("Invalid mixer");
+    let mixer_fn = mixer::find(mixer_name).expect("Invalid mixer");
     // let mixer = mixer::find(None: Option<&String>).expect("Invalid mixer"); //TODO when 'type ascription' reaches stable
-
-    let credentials =
-        Credentials::with_password(String::from("georgefsthomas@gmail.com"), password);
-
-    let session_config = SessionConfig {
-        device_id: name.clone(),
-        ..SessionConfig::default()
-    };
-
-    let player_config = PlayerConfig {
-        bitrate: Bitrate::Bitrate320,
-        ..PlayerConfig::default()
-    };
+    let mixer = mixer_fn(Some(MixerConfig::default()));
 
     let connect_config = ConnectConfig {
-        name,
+        name: name.clone(),
         device_type: DeviceType::default(),
         volume: u16::max_value(),
         linear_volume: false,
     };
 
-    let connect = Session::connect(
-        session_config.clone(),
-        credentials.clone(),
-        None,
-        handle.clone(),
+    let session = core
+        .run(Session::connect(
+            SessionConfig {
+                device_id: name.clone(),
+                ..SessionConfig::default()
+            },
+            Credentials::with_password(String::from("georgefsthomas@gmail.com"), password),
+            None,
+            core.handle().clone(),
+        ))
+        .unwrap();
+    println!("Spotify connection established.");
+
+    let backend_fn = audio_backend::find(None).expect("Invalid backend");
+    let (player, evs) = Player::new(
+        PlayerConfig {
+            bitrate: Bitrate::Bitrate320,
+            ..PlayerConfig::default()
+        },
+        session.clone(),
+        mixer.get_audio_filter(),
+        move || backend_fn(None),
     );
 
-    let init = Main {
-        spirc_sender: txs,
-        player_config,
-        connect_config: connect_config.clone(),
-        backend,
-        device: None,
-        mixer,
-        mixer_config: MixerConfig::default(),
-        connect: connect,
-        spirc: None,
-        spirc_task: None,
-        shutdown: false,
-        signal: Box::new(tokio_signal::ctrl_c().flatten_stream()),
-    };
-
-    core.run(init).unwrap()
+    let (spirc, spirc_task) = Spirc::new(connect_config, session.clone(), player, mixer);
+    (spirc, spirc_task, evs)
 }
 
 // data structures
@@ -560,93 +545,4 @@ fn main_spotify(txs: Sender<Arc<Spirc>>, name: String, password: String) {
 enum Mode {
     Normal,
     TV,
-}
-
-//TODO stuff from here down is more or less copied straight from librespot: main.rs
-//     it scares me
-//     attempt to understand it and modify it to my purposes
-
-struct Main {
-    spirc_sender: Sender<Arc<Spirc>>, //TODO this is a bit of a hack to get the Spirc object back to main thread
-    player_config: PlayerConfig,
-    connect_config: ConnectConfig,
-    backend: fn(Option<String>) -> Box<dyn Sink>,
-    device: Option<String>,
-    mixer: fn(Option<MixerConfig>) -> Box<dyn Mixer>,
-    mixer_config: MixerConfig,
-    signal: IoStream<()>,
-    spirc: Option<Arc<Spirc>>,
-    spirc_task: Option<SpircTask>,
-    connect: Box<dyn Future<Item = Session, Error = io::Error>>,
-    shutdown: bool,
-}
-impl Future for Main {
-    type Item = ();
-    type Error = ();
-
-    fn poll(&mut self) -> Poll<(), ()> {
-        loop {
-            let mut progress = false;
-
-            // this seems to set up a session - only happens once at start
-            if let Async::Ready(session) = self.connect.poll().unwrap() {
-                println!("Setting up spotify");
-
-                self.connect = Box::new(futures::future::empty());
-                let mixer_config = self.mixer_config.clone();
-                let mixer = (self.mixer)(Some(mixer_config));
-                let player_config = self.player_config.clone();
-                let connect_config = self.connect_config.clone();
-
-                let audio_filter = mixer.get_audio_filter();
-                let backend = self.backend;
-                let device = self.device.clone();
-                let (player, _) =
-                    Player::new(player_config, session.clone(), audio_filter, move || {
-                        (backend)(device)
-                    });
-
-                let (spirc, spirc_task) = Spirc::new(connect_config, session, player, mixer);
-                let a = Arc::new(spirc);
-                self.spirc = Some(a.clone());
-                self.spirc_sender.send(a.clone()).unwrap();
-                self.spirc_task = Some(spirc_task);
-
-                progress = true;
-            }
-
-            // handle ctrl-c (copied)
-            if let Async::Ready(Some(())) = self.signal.poll().unwrap() {
-                println!("Ctrl-C received");
-                if !self.shutdown {
-                    if let Some(ref spirc) = self.spirc {
-                        spirc.shutdown();
-                    } else {
-                        return Ok(Async::Ready(()));
-                    }
-                    self.shutdown = true;
-                } else {
-                    return Ok(Async::Ready(()));
-                }
-                progress = true;
-            }
-
-            // handle spirc tasks?
-            if let Some(ref mut spirc_task) = self.spirc_task {
-                println!("Running spotify task"); //TODO more info
-                if let Async::Ready(()) = spirc_task.poll().unwrap() {
-                    // only passes at shutdown? but polling runs the next task
-                    if self.shutdown {
-                        return Ok(Async::Ready(()));
-                    } else {
-                        panic!("Spirc shut down unexpectedly");
-                    }
-                }
-            }
-
-            if !progress {
-                return Ok(Async::NotReady);
-            }
-        }
-    }
 }
