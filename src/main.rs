@@ -13,6 +13,7 @@ use librespot::playback::player::Player;
 use lifx_core::Message;
 use lifx_core::RawMessage;
 use lifx_core::HSBK;
+use std::collections::HashSet;
 use std::fs::{read_dir, File};
 use std::io;
 use std::net::SocketAddr;
@@ -123,7 +124,7 @@ fn main() {
                         let c = EventCode::EV_KEY(k);
                         let t = TimeVal::new(0, 0);
                         let ev = InputEvent::new(&t, &c, buf[1] as i32);
-                        tx.clone().send(ev).unwrap();
+                        tx.clone().send((ev, None)).unwrap();
                     } else {
                         println!(
                             "Int received over network is not a valid key code: {:?}",
@@ -145,13 +146,15 @@ fn main() {
 }
 
 // create a new thread to read events from the device at p, and send them on s
-fn read_dev(tx: Sender<InputEvent>, path: PathBuf) {
+fn read_dev(tx: Sender<(InputEvent, Option<String>)>, path: PathBuf) {
     let p = path.clone();
     thread::spawn(move || match File::open(path) {
         Ok(file) => match Device::new_from_fd(file) {
             Ok(dev) => loop {
                 match dev.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING) {
-                    Ok((_, event)) => tx.send(event).unwrap(),
+                    Ok((_, event)) => tx
+                        .send((event, dev.phys().map(|s| String::from(s))))
+                        .unwrap(),
                     Err(e) => {
                         println!(
                             "Failed to get next event, abandoning device: {} ({:?})",
@@ -225,7 +228,11 @@ fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Err
 }
 
 // read from 'rx', responding to events
-fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>, debug: bool) {
+fn respond_to_events(
+    rx: Receiver<(InputEvent, Option<String>)>,
+    txs: Receiver<Arc<Spirc>>,
+    debug: bool,
+) {
     let lifx_sock = UdpSocket::bind("0.0.0.0:56700").unwrap();
     lifx_sock
         .set_read_timeout(Some(Duration::from_secs(3)))
@@ -249,7 +256,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>, debug:
     let mut _shift = false;
     let mut _alt = false;
     let mut mode = Mode::Normal;
-    let mut idle = false;
+    let mut ignored: HashSet<String> = HashSet::new(); // MAC addresses of devices currently being ignored
 
     // wait to receive Spirc
     let spirc = txs
@@ -257,7 +264,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>, debug:
         .expect("Timed out waiting for Spirc object.");
 
     loop {
-        let e = rx.recv().unwrap();
+        let (e, phys) = rx.recv().unwrap();
         if let EventCode::EV_KEY(k) = e.event_code {
             if debug {
                 println!("{:?},  {:?}", k, e.value);
@@ -275,36 +282,64 @@ fn respond_to_events(rx: Receiver<InputEvent>, txs: Receiver<Arc<Spirc>>, debug:
                 (KEY_RIGHTSHIFT, 0) => _shift = false,
                 (KEY_LEFTALT, 0) => _alt = false,
                 (KEY_RIGHTALT, 1) => {
-                    for dev in ["Keyboard", "Consumer Control", "System Control"].iter() {
-                        let action = if idle { "disable" } else { "enable" };
-                        let full_dev = String::from("Keyboard K380 ") + dev;
-                        let d = full_dev.clone();
-                        match Command::new("xinput").arg(action).arg(full_dev).output() {
-                            Ok(out) => {
-                                let o = out.clone();
-                                let err = out.stderr;
-                                if !err.is_empty() {
-                                    println!(
-                                        "Failed to {} xinput device: {}\n{}",
-                                        action,
-                                        d,
-                                        String::from_utf8(err).unwrap()
-                                    );
+                    if let Some(phys) = phys.clone() {
+                        let phys0 = phys.clone();
+                        let action = if ignored.contains(&phys) {
+                            ignored.remove(&phys);
+                            "enable"
+                        } else {
+                            ignored.insert(phys);
+                            "disable"
+                        };
+                        let phys = phys0.clone();
+                        // enable, disable all devices with same MAC
+                        for dir_entry in read_dir(&EVDEV_DIR).unwrap() {
+                            let path = dir_entry.unwrap().path();
+                            if !path.is_dir() {
+                                let fd = File::open(path).unwrap();
+                                if let Ok(dev) = Device::new_from_fd(fd) {
+                                    if let Some(phys1) = dev.phys() {
+                                        if phys1 == phys {
+                                            let dev_name = dev.name().unwrap();
+                                            match Command::new("xinput")
+                                                .arg(action)
+                                                .arg(dev_name)
+                                                .output()
+                                            {
+                                                Ok(out) => {
+                                                    let o = out.clone();
+                                                    let err = out.stderr;
+                                                    if !err.is_empty() {
+                                                        println!(
+                                                            "Failed to {} xinput device: {}\n{}",
+                                                            action,
+                                                            dev_name,
+                                                            String::from_utf8(err).unwrap()
+                                                        );
+                                                    }
+                                                    if debug {
+                                                        print!(
+                                                            "{}",
+                                                            String::from_utf8(o.stdout).unwrap()
+                                                        );
+                                                    }
+                                                }
+                                                Err(e) => println!(
+                                                    "Failed to {} xinput device: {} ({:?})",
+                                                    action, dev_name, e
+                                                ),
+                                            }
+                                        }
+                                    }
                                 }
-                                if debug {
-                                    print!("{}", String::from_utf8(o.stdout).unwrap());
-                                }
-                            }
-                            Err(e) => {
-                                println!("Failed to {} xinput device: {} ({:?})", action, d, e)
                             }
                         }
                     }
-                    idle = !idle
                 }
                 _ => (),
             }
-            if !idle {
+            let phys = phys.clone();
+            if phys.map_or(true, |phys| !ignored.contains(&phys)) {
                 match mode {
                     Mode::Normal => {
                         let stereo = |cmd: &str| ir_cmd("stereo", cmd, debug);
