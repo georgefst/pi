@@ -557,7 +557,7 @@ fn spotify_setup(
             core.handle().clone(),
         ))
         .unwrap();
-    println!("Spotify connection established.");
+    println!("Spotify connection established");
 
     let backend_fn = audio_backend::find(None).expect("Invalid backend");
     let (player, evs) = Player::new(
