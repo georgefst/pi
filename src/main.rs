@@ -460,6 +460,7 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
                     }
                     TV => {
                         let tv = |cmd: &str| ir_cmd("tv", cmd, ev_type, debug);
+                        let tv_once = |cmd: &str| ir_cmd_once("tv", cmd, debug);
                         let switcher = |cmd: &str| ir_cmd("switcher", cmd, ev_type, debug);
                         match &k {
                             KEY_T => {
@@ -469,11 +470,13 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
                                 }
                             }
                             KEY_SPACE => {
-                                tv("KEY_AUX");
-                                sleep(Duration::from_millis(300));
-                                tv("KEY_AUX");
-                                sleep(Duration::from_millis(300));
-                                tv("KEY_OK");
+                                if ev_type == Pressed {
+                                    tv_once("KEY_AUX");
+                                    sleep(Duration::from_millis(300));
+                                    tv_once("KEY_AUX");
+                                    sleep(Duration::from_millis(300));
+                                    tv_once("KEY_OK");
+                                }
                             }
                             KEY_P => tv("KEY_POWER"),
                             KEY_1 => {
@@ -509,6 +512,7 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
                             KEY_MUTE => tv("KEY_MUTE"),
                             KEY_COMMA => tv("KEY_CHANNELDOWN"),
                             KEY_DOT => tv("KEY_CHANNELUP"),
+                            KEY_A => tv("KEY_AUX"),
                             KEY_S => tv("KEY_SETUP"),
                             KEY_G => tv("KEY_G"),
                             KEY_Q => tv("KEY_MENU"),
