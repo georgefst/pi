@@ -1,6 +1,7 @@
 use clap::{self, Clap};
 use evdev_rs::enums::{int_to_ev_key, EventCode, EV_KEY::*};
 use evdev_rs::*;
+use futures::stream::Stream;
 use inotify::{EventMask, Inotify, WatchMask};
 use librespot::connect::spirc::{Spirc, SpircTask};
 use librespot::core::authentication::Credentials;
@@ -16,6 +17,7 @@ use lifx_core::HSBK;
 use std::collections::HashSet;
 use std::fs::{read_dir, File};
 use std::io;
+use std::iter::Iterator;
 use std::net::SocketAddr;
 use std::net::UdpSocket;
 use std::path::PathBuf;
@@ -140,6 +142,12 @@ fn main() {
     let mut core = Core::new().unwrap();
     let (spirc, spirc_task, evs) =
         spotify_setup(opts.spotify_device_name, opts.spotify_password, &mut core);
+
+    thread::spawn(move || {
+        evs.wait().for_each(|e| {
+            println!("Spotify event: {:?}", e);
+        });
+    });
 
     let debug = opts.debug;
     thread::spawn(move || {
