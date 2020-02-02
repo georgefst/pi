@@ -207,6 +207,7 @@ fn handle_cmd(res: io::Result<std::process::Output>, cmd_name: &str, extra: &str
                 )
             }
             if debug {
+                //TODO doesn't seem to show anything when calling xinput
                 print!("{}", String::from_utf8(out.stdout).unwrap());
             }
         }
