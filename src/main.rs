@@ -83,6 +83,7 @@ const EVDEV_DIR: &str = "/dev/input/";
 fn main() {
     // get data from command line args
     let opts: Opts = Opts::parse();
+    let debug = opts.debug;
 
     // set up channel for keyboard events
     let (tx, rx) = channel();
@@ -92,7 +93,7 @@ fn main() {
         let path = dir_entry.unwrap().path();
         if !path.is_dir() {
             println!("Found device: {}", path.to_str().unwrap());
-            read_dev(tx.clone(), path);
+            read_dev(tx.clone(), path, debug);
         }
     }
 
@@ -112,7 +113,7 @@ fn main() {
                         //TODO cf. my Haskell lib for more principled solution
                         sleep(Duration::from_millis(300)); // sleep to avoid permission error
                         let full_path = PathBuf::from(EVDEV_DIR).join(path);
-                        read_dev(tx1.clone(), full_path);
+                        read_dev(tx1.clone(), full_path, debug);
                     }
                 }
             }
@@ -155,7 +156,6 @@ fn main() {
         });
     });
 
-    let debug = opts.debug;
     thread::spawn(move || {
         respond_to_events(rx, spirc, debug);
     });
@@ -165,25 +165,30 @@ fn main() {
 }
 
 // create a new thread to read events from the device at p, and send them on s
-fn read_dev(tx: Sender<(InputEvent, Option<String>)>, path: PathBuf) {
+fn read_dev(tx: Sender<(InputEvent, Option<String>)>, path: PathBuf, debug: bool) {
     let p = path.clone();
     thread::spawn(move || match File::open(path) {
         Ok(file) => match Device::new_from_fd(file) {
-            Ok(dev) => loop {
-                match dev.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING) {
-                    Ok((_, event)) => tx
-                        .send((event, dev.phys().map(|s| String::from(s))))
-                        .unwrap(),
-                    Err(e) => {
-                        println!(
-                            "Failed to get next event, abandoning device: {} ({:?})",
-                            p.to_str().unwrap(),
-                            e
-                        );
-                        break;
+            Ok(dev) => {
+                if let Some(phys) = dev.phys() {
+                    xinput(String::from(phys), XInput::Disable, debug);
+                }
+                loop {
+                    match dev.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING) {
+                        Ok((_, event)) => tx
+                            .send((event, dev.phys().map(|s| String::from(s))))
+                            .unwrap(),
+                        Err(e) => {
+                            println!(
+                                "Failed to get next event, abandoning device: {} ({:?})",
+                                p.to_str().unwrap(),
+                                e
+                            );
+                            break;
+                        }
                     }
                 }
-            },
+            }
             Err(e) => {
                 println!("Not an evdev device: {} ({:?})", p.to_str().unwrap(), e);
             }
@@ -314,33 +319,13 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
                         let action = if ignored.contains(&phys) {
                             // regain control
                             ignored.remove(&phys);
-                            "disable"
+                            XInput::Disable
                         } else {
                             // pass control back to X
                             ignored.insert(phys);
-                            "enable"
+                            XInput::Enable
                         };
-                        let phys = phys0.clone();
-                        // enable, disable all devices with same MAC
-                        for dir_entry in read_dir(&EVDEV_DIR).unwrap() {
-                            let path = dir_entry.unwrap().path();
-                            if !path.is_dir() {
-                                let fd = File::open(path).unwrap();
-                                if let Ok(dev) = Device::new_from_fd(fd) {
-                                    if let Some(phys1) = dev.phys() {
-                                        if phys1 == phys {
-                                            let dev_name = dev.name().unwrap();
-                                            let res = Command::new("xinput")
-                                                .args(&[action, dev_name])
-                                                .output();
-                                            let cmd_name =
-                                                String::from(action) + (" xinput device");
-                                            handle_cmd(res, &cmd_name, dev_name, debug);
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        xinput(phys0, action, debug)
                     }
                 }
                 _ => (),
@@ -527,6 +512,37 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
                             KEY_ESC => tv("KEY_EXIT"),
                             _ => (),
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+enum XInput {
+    Enable,
+    Disable,
+}
+// enable, disable all devices with the MAC 'phys'
+fn xinput(phys: String, action: XInput, debug: bool) {
+    for dir_entry in read_dir(&EVDEV_DIR).unwrap() {
+        let path = dir_entry.unwrap().path();
+        if !path.is_dir() {
+            let fd = File::open(path).unwrap();
+            if let Ok(dev) = Device::new_from_fd(fd) {
+                if let Some(phys1) = dev.phys() {
+                    if phys1 == phys {
+                        let dev_name = dev.name().unwrap();
+                        let action_str = match action {
+                            XInput::Enable => "enable",
+                            XInput::Disable => "disable",
+                        };
+                        let res = Command::new("xinput")
+                            .args(&[action_str, dev_name])
+                            .output();
+                        let cmd_name = String::from(action_str) + (" xinput device");
+                        handle_cmd(res, &cmd_name, dev_name, debug);
                     }
                 }
             }
