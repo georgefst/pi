@@ -1,5 +1,5 @@
 use clap::{self, Clap};
-use evdev_rs::enums::{int_to_ev_key, EventCode, EV_KEY::*};
+use evdev_rs::enums::{int_to_ev_key, EventCode, EventType, EV_KEY::*};
 use evdev_rs::*;
 use futures::stream::Stream;
 use inotify::{EventMask, Inotify, WatchMask};
@@ -165,26 +165,29 @@ fn main() {
 }
 
 // create a new thread to read events from the device at p, and send them on s
+// if the device doesn't have key events (eg. a mouse), it is ignored
 fn read_dev(tx: Sender<(InputEvent, Option<String>)>, path: PathBuf, debug: bool) {
     let p = path.clone();
     thread::spawn(move || match File::open(path) {
         Ok(file) => match Device::new_from_fd(file) {
             Ok(dev) => {
-                if let Some(phys) = dev.phys() {
-                    xinput(String::from(phys), XInput::Disable, debug);
-                }
-                loop {
-                    match dev.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING) {
-                        Ok((_, event)) => tx
-                            .send((event, dev.phys().map(|s| String::from(s))))
-                            .unwrap(),
-                        Err(e) => {
-                            println!(
-                                "Failed to get next event, abandoning device: {} ({:?})",
-                                p.to_str().unwrap(),
-                                e
-                            );
-                            break;
+                if dev.has_event_type(&EventType::EV_KEY) {
+                    if let Some(phys) = dev.phys() {
+                        xinput(String::from(phys), XInput::Disable, debug);
+                    }
+                    loop {
+                        match dev.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING) {
+                            Ok((_, event)) => tx
+                                .send((event, dev.phys().map(|s| String::from(s))))
+                                .unwrap(),
+                            Err(e) => {
+                                println!(
+                                    "Failed to get next event, abandoning device: {} ({:?})",
+                                    p.to_str().unwrap(),
+                                    e
+                                );
+                                break;
+                            }
                         }
                     }
                 }
