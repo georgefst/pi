@@ -5,7 +5,6 @@ authors = ["George Thomas <georgefsthomas@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-futures = "0.1.8" #TODO very old, but what librespot uses
 inotify = "0.8.0"
 
 #TODO need 3.0, but not stable yet
@@ -22,13 +21,3 @@ evdev-rs = { path = "evdev-rs" }
 # https://github.com/Aehmlo/lifxi/issues/7
 # lifxi = "0.1.1"
 lifx-core = "0.2.0"
-
-#TODO these are only used by the copied code from librespot
-tokio-core = "*"
-tokio-io = "*"
-tokio-signal = "*"
-
-[dependencies.librespot]
-version = "0.1.0"
-default-features = false
-features = ["alsa-backend"]

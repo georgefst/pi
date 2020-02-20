@@ -1,16 +1,7 @@
 use clap::{self, Clap};
 use evdev_rs::enums::{int_to_ev_key, EventCode, EventType, EV_KEY::*};
 use evdev_rs::*;
-use futures::stream::Stream;
 use inotify::{EventMask, Inotify, WatchMask};
-use librespot::connect::spirc::{Spirc, SpircTask};
-use librespot::core::authentication::Credentials;
-use librespot::core::config::{ConnectConfig, DeviceType, SessionConfig};
-use librespot::core::session::Session;
-use librespot::playback::audio_backend;
-use librespot::playback::config::{Bitrate, PlayerConfig};
-use librespot::playback::mixer::{self, MixerConfig};
-use librespot::playback::player::{Player, PlayerEvent};
 use lifx_core::Message;
 use lifx_core::RawMessage;
 use lifx_core::HSBK;
@@ -28,10 +19,6 @@ use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
 
-// futures stuff - only used by the librespot code
-use futures::sync::mpsc::UnboundedReceiver;
-use tokio_core::reactor::Core;
-
 use KeyEventType::*;
 use Mode::*;
 
@@ -41,7 +28,6 @@ maintainability
     once I actually understand the borrow checker
         tx, tx1...
         read_dev itself shouldnt be responsible for spawning the thread
-        spotify_main should be able to go into it's own thread like everything else
         review all uses of 'clone', 'move', '&' etc.
         mode_transition closure
             avoids repeated code in printing old and new mode
@@ -50,27 +36,19 @@ maintainability
             when debugging, print the command text
     tooling to manage imports?
     better event names in lircd.conf
-    cross-compile without docker
-        ask on irc: https://gitter.im/librespot-org/spotify-connect-resources
 stability
-    spirc.shutdown() on program exit
 performance
-    ignore devices which can't perform key events
 features
     train
     weather
-    spotify
-        search for song, artist etc. (require web API?)
+    spotify (web API)
+        search for song, artist etc.
         switch device (to, and maybe from, Pi)
 */
 
 // command line arg data
 #[derive(Clap, Debug)]
 struct Opts {
-    #[clap(short = "n", default_value = "Pi")]
-    spotify_device_name: String,
-    #[clap(short = "p")]
-    spotify_password: String,
     #[clap(short = "e")]
     evdev_port: u16, // for receiving events over LAN
     #[clap(short = "d", long = "debug")]
@@ -146,22 +124,7 @@ fn main() {
         }
     });
 
-    let mut core = Core::new().unwrap();
-    let (spirc, spirc_task, evs) =
-        spotify_setup(opts.spotify_device_name, opts.spotify_password, &mut core);
-
-    thread::spawn(move || {
-        evs.wait().for_each(|e| {
-            println!("Spotify event: {:?}", e);
-        });
-    });
-
-    thread::spawn(move || {
-        respond_to_events(rx, spirc, debug);
-    });
-
-    // run spotify
-    core.run(spirc_task).unwrap();
+    respond_to_events(rx, debug);
 }
 
 // create a new thread to read events from the device at p, and send them on s
@@ -271,7 +234,7 @@ fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Err
 }
 
 // read from 'rx', responding to events
-fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, debug: bool) {
+fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
     let lifx_sock = UdpSocket::bind("0.0.0.0:56700").unwrap();
     lifx_sock
         .set_read_timeout(Some(Duration::from_secs(3)))
@@ -352,9 +315,6 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, spirc: Spirc, d
                             (KEY_VOLUMEUP, _) => stereo("KEY_VOLUMEUP"),
                             (KEY_VOLUMEDOWN, _) => stereo("KEY_VOLUMEDOWN"),
                             (KEY_MUTE, _) => stereo("muting"),
-                            (KEY_PLAYPAUSE, Pressed) => spirc.play_pause(),
-                            (KEY_PREVIOUSSONG, Pressed) => spirc.prev(),
-                            (KEY_NEXTSONG, Pressed) => spirc.next(),
                             (KEY_LEFT, _) => {
                                 //TODO don't trigger on 'Released' (wait for 'or patterns'?)
                                 hsbk = HSBK {
@@ -551,52 +511,6 @@ fn xinput(phys: String, action: XInput, debug: bool) {
             }
         }
     }
-}
-
-// create a Connect device through librespot
-fn spotify_setup(
-    name: String,
-    password: String,
-    core: &mut Core,
-) -> (Spirc, SpircTask, UnboundedReceiver<PlayerEvent>) {
-    let mixer_name: Option<&String> = None;
-    let mixer_fn = mixer::find(mixer_name).expect("Invalid mixer");
-    // let mixer = mixer::find(None: Option<&String>).expect("Invalid mixer"); //TODO when 'type ascription' reaches stable
-    let mixer = mixer_fn(Some(MixerConfig::default()));
-
-    let connect_config = ConnectConfig {
-        name: name.clone(),
-        device_type: DeviceType::default(),
-        volume: u16::max_value(),
-        linear_volume: false,
-    };
-
-    let session = core
-        .run(Session::connect(
-            SessionConfig {
-                device_id: name.clone(),
-                ..SessionConfig::default()
-            },
-            Credentials::with_password(String::from("georgefsthomas@gmail.com"), password),
-            None,
-            core.handle().clone(),
-        ))
-        .unwrap();
-    println!("Spotify connection established");
-
-    let backend_fn = audio_backend::find(None).expect("Invalid backend");
-    let (player, evs) = Player::new(
-        PlayerConfig {
-            bitrate: Bitrate::Bitrate320,
-            ..PlayerConfig::default()
-        },
-        session.clone(),
-        mixer.get_audio_filter(),
-        move || backend_fn(None),
-    );
-
-    let (spirc, spirc_task) = Spirc::new(connect_config, session.clone(), player, mixer);
-    (spirc, spirc_task, evs)
 }
 
 // program mode
