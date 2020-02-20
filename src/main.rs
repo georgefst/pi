@@ -315,6 +315,9 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
                             (KEY_VOLUMEUP, _) => stereo("KEY_VOLUMEUP"),
                             (KEY_VOLUMEDOWN, _) => stereo("KEY_VOLUMEDOWN"),
                             (KEY_MUTE, _) => stereo("muting"),
+                            (KEY_PLAYPAUSE, Pressed) => mpris("PlayPause", debug),
+                            (KEY_PREVIOUSSONG, Pressed) => mpris("Previous", debug),
+                            (KEY_NEXTSONG, Pressed) => mpris("Next", debug),
                             (KEY_LEFT, _) => {
                                 //TODO don't trigger on 'Released' (wait for 'or patterns'?)
                                 hsbk = HSBK {
@@ -511,6 +514,18 @@ fn xinput(phys: String, action: XInput, debug: bool) {
             }
         }
     }
+}
+
+fn mpris(cmd: &str, debug: bool) {
+    let res = Command::new("dbus-send")
+        .args(&[
+            "--print-reply",
+            "--dest=org.mpris.MediaPlayer2.spotifyd",
+            "/org/mpris/MediaPlayer2",
+            &(String::from("org.mpris.MediaPlayer2.Player.") + cmd),
+        ])
+        .output();
+    handle_cmd(res, "perform mpris command", cmd, debug);
 }
 
 // program mode
