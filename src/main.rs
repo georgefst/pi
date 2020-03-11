@@ -9,8 +9,7 @@ use std::collections::HashSet;
 use std::fs::{read_dir, File};
 use std::io;
 use std::iter::Iterator;
-use std::net::SocketAddr;
-use std::net::UdpSocket;
+use std::net::*;
 use std::path::PathBuf;
 use std::process::Command;
 use std::result::*;
@@ -57,6 +56,8 @@ struct Opts {
 
 // useful constants
 const EVDEV_DIR: &str = "/dev/input/";
+const LIFX_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 187)); //TODO scan for this at startup
+const LIFX_PORT: u16 = 56700;
 
 fn main() {
     // get data from command line args
@@ -239,7 +240,7 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
     lifx_sock
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
-    let lifx_target: SocketAddr = "192.168.1.188:56700".parse().unwrap();
+    let lifx_target: SocketAddr = SocketAddr::new(LIFX_IP, LIFX_PORT);
 
     // initialise state
     let mut hsbk = get_hsbk(&lifx_sock, lifx_target).unwrap_or_else(|e| {
