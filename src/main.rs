@@ -36,11 +36,14 @@ maintainability
     tooling to manage imports?
     better event names in lircd.conf
 stability
+    more asnycness
+        e.g. mpris play/pause hangs for ~10s when spotify hasnt been active for a while
+            this causes other commands to be queued rather than just firing
 performance
 features
     train
     weather
-    spotify (web API)
+    spotify (web API) - https://crates.io/crates/rspotify looks well-maintained and documented
         search for song, artist etc.
         switch device (to, and maybe from, Pi)
 */
