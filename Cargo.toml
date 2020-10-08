@@ -5,17 +5,13 @@ authors = ["George Thomas <georgefsthomas@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+evdev-rs = "0.4.0"
 inotify = "0.8.0"
 
 #TODO need 3.0, but not stable yet
 # clap = "2.33.0"
 # clap = "~3.0.0-beta1"
 clap = {git = "https://github.com/clap-rs/clap"}
-
-#TODO cross-compilation fails
-# evdev-rs = "0.3.1"
-# https://github.com/ndesh26/evdev-rs/issues/29
-evdev-rs = { path = "evdev-rs" }
 
 #TODO higher level, but doesn't have a LAN interface (yet - they are planning on it)
 # https://github.com/Aehmlo/lifxi/issues/7
