@@ -61,6 +61,8 @@ struct Opts {
 const EVDEV_DIR: &str = "/dev/input/";
 const LIFX_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 187)); //TODO scan for this at startup
 const LIFX_PORT: u16 = 56700;
+const KEY_SEND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 236)); //TODO set from CLI
+const KEY_SEND_PORT: u16 = 56702; // TODO ditto
 
 fn main() {
     // get data from command line args
@@ -213,6 +215,10 @@ fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Err
 
 // read from 'rx', responding to events
 fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
+    let mut key_send_buf = [0; 2];
+    let key_send_addr = SocketAddr::new(KEY_SEND_IP, KEY_SEND_PORT);
+    let key_send_sock = &UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0))).unwrap();
+
     let lifx_sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
     lifx_sock
         .set_read_timeout(Some(Duration::from_secs(3)))
@@ -252,6 +258,7 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
                         KEY_ESC => Some(Idle),
                         KEY_SPACE => Some(Normal),
                         KEY_T => Some(TV),
+                        KEY_S => Some(Sending),
                         _ => None,
                     },
                     _ => None,
@@ -293,6 +300,19 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
                 //TODO if one of the modifier keys matches, we shouldn't get this far
                 match mode {
                     Idle => (),
+                    Sending => {
+                        if debug {
+                            println!("Sending: {:?}, {:?}", k, ev_type);
+                        }
+                        key_send_buf[0] = k as u8;
+                        key_send_buf[1] = ev_type as u8;
+                        key_send_sock
+                            .send_to(&mut key_send_buf, key_send_addr)
+                            .unwrap_or_else(|e| {
+                                println!("Failed to send: {}", e);
+                                0
+                            });
+                    }
                     Normal => {
                         let stereo = |cmd: &str| ir_cmd("stereo", cmd, ev_type, debug);
                         let stereo_once = |cmd: &str| ir_cmd_once("stereo", cmd, debug);
@@ -516,6 +536,7 @@ fn mpris(cmd: &str, debug: bool) {
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
 enum Mode {
     Idle, // let the OS handle keypresses
+    Sending, // send keypresses over UDP
     Normal,
     TV,
 }
