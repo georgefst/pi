@@ -1,5 +1,5 @@
 use clap::{self, Clap};
-use evdev_rs::enums::{int_to_ev_key, EventCode, EventType, EV_KEY::*};
+use evdev_rs::enums::{EventCode, EventType, EV_KEY::*};
 use evdev_rs::*;
 use inotify::{EventMask, Inotify, WatchMask};
 use lifx_core::Message;
@@ -33,7 +33,6 @@ maintainability
             needs to change mutable variable, ideally without it being explicitly passed in
         have 'handle_cmd' actually take a Command
             when debugging, print the command text
-    tooling to manage imports?
     better event names in lircd.conf
 stability
     more asnycness
@@ -51,8 +50,6 @@ features
 // command line arg data
 #[derive(Clap, Debug)]
 struct Opts {
-    #[clap(short = "e")]
-    evdev_port: u16, // for receiving events over LAN
     #[clap(short = "d", long = "debug")]
     debug: bool, // print various extra data
 }
@@ -98,32 +95,6 @@ fn main() {
                         read_dev(tx1.clone(), full_path, debug);
                     }
                 }
-            }
-        }
-    });
-
-    // watch for network events
-    let evdev_port = opts.evdev_port;
-    thread::spawn(move || {
-        //TODO security
-        let sock = &UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], evdev_port))).unwrap();
-        let mut buf = [0; 2];
-        loop {
-            match sock.recv_from(&mut buf) {
-                Ok((_n_bytes, _addr)) => {
-                    if let Some(k) = int_to_ev_key(buf[0] as u32) {
-                        let c = EventCode::EV_KEY(k);
-                        let t = TimeVal::new(0, 0);
-                        let ev = InputEvent::new(&t, &c, buf[1] as i32);
-                        tx.clone().send((ev, None)).unwrap();
-                    } else {
-                        println!(
-                            "Int received over network is not a valid key code: {:?}",
-                            buf[0]
-                        )
-                    }
-                }
-                Err(e) => println!("Received invalid network message: {:?} ({:?})", buf, e),
             }
         }
     });
