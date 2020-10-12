@@ -40,6 +40,7 @@ stability
 correctness
     going idle only disables xinput for the current device, although mode is global
         this isn't a huge issue since in practice we're just  using the one physical device
+    xinput enable on kill
 performance
 features
     train
