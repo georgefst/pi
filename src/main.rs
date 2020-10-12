@@ -5,7 +5,6 @@ use inotify::{EventMask, Inotify, WatchMask};
 use lifx_core::Message;
 use lifx_core::RawMessage;
 use lifx_core::HSBK;
-use std::collections::HashSet;
 use std::fs::{read_dir, File};
 use std::io;
 use std::iter::Iterator;
@@ -38,6 +37,9 @@ stability
     more asnycness
         e.g. mpris play/pause hangs for ~10s when spotify hasnt been active for a while
             this causes other commands to be queued rather than just firing
+correctness
+    going idle only disables xinput for the current device, although mode is global
+        this isn't a huge issue since in practice we're just  using the one physical device
 performance
 features
     train
@@ -233,7 +235,7 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
     let mut _shift = false;
     let mut _alt = false;
     let mut mode = Normal;
-    let mut ignored: HashSet<String> = HashSet::new(); // MAC addresses of devices currently being ignored
+    let mut switching = false; // mode switch key was just pressed
 
     loop {
         let (e, phys) = rx.recv().unwrap();
@@ -242,46 +244,58 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
             if debug {
                 println!("{:?},  {:?}", k, ev_type);
             }
-            match (&k, ev_type) {
-                // stuff that happens in all modes
-                (KEY_LEFTCTRL, Pressed) => ctrl = true,
-                (KEY_RIGHTCTRL, Pressed) => ctrl = true,
-                (KEY_LEFTSHIFT, Pressed) => _shift = true,
-                (KEY_RIGHTSHIFT, Pressed) => _shift = true,
-                (KEY_LEFTALT, Pressed) => _alt = true,
-                (KEY_LEFTCTRL, Released) => ctrl = false,
-                (KEY_RIGHTCTRL, Released) => ctrl = false,
-                (KEY_LEFTSHIFT, Released) => _shift = false,
-                (KEY_RIGHTSHIFT, Released) => _shift = false,
-                (KEY_LEFTALT, Released) => _alt = false,
-                (KEY_RIGHTALT, Pressed) => {
-                    if let Some(phys) = phys.clone() {
-                        let phys0 = phys.clone();
-                        let action = if ignored.contains(&phys) {
-                            // regain control
-                            ignored.remove(&phys);
-                            XInput::Disable
-                        } else {
-                            // pass control back to X
-                            ignored.insert(phys);
-                            XInput::Enable
-                        };
-                        xinput(phys0, action, debug)
-                    }
+            if switching {
+                let old_mode = mode;
+                let new_mode = match ev_type {
+                    Released => match &k {
+                        KEY_ESC => Some(Idle),
+                        KEY_SPACE => Some(Normal),
+                        KEY_T => Some(TV),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some(new_mode) = new_mode {
+                    if old_mode == Idle {
+                        if let Some(phys) = phys.clone() {
+                            xinput(phys, XInput::Disable, debug)
+                        }
+                    };
+                    if new_mode == Idle {
+                        if let Some(phys) = phys.clone() {
+                            xinput(phys, XInput::Enable, debug)
+                        }
+                    };
+                    mode = new_mode;
+                    println!("Entering mode: {:?}", new_mode);
+                    switching = false;
                 }
-                _ => (),
-            }
-            let phys = phys.clone();
-            if phys.map_or(true, |phys| !ignored.contains(&phys)) {
+            } else {
+                match (&k, ev_type) {
+                    // stuff that happens in all modes
+                    (KEY_LEFTCTRL, Pressed) => ctrl = true,
+                    (KEY_RIGHTCTRL, Pressed) => ctrl = true,
+                    (KEY_LEFTSHIFT, Pressed) => _shift = true,
+                    (KEY_RIGHTSHIFT, Pressed) => _shift = true,
+                    (KEY_LEFTALT, Pressed) => _alt = true,
+                    (KEY_LEFTCTRL, Released) => ctrl = false,
+                    (KEY_RIGHTCTRL, Released) => ctrl = false,
+                    (KEY_LEFTSHIFT, Released) => _shift = false,
+                    (KEY_RIGHTSHIFT, Released) => _shift = false,
+                    (KEY_LEFTALT, Released) => _alt = false,
+                    (KEY_RIGHTALT, Released) => {
+                        switching = true;
+                        println!("Switching: select mode...")
+                    }
+                    _ => (),
+                }
+                //TODO if one of the modifier keys matches, we shouldn't get this far
                 match mode {
+                    Idle => (),
                     Normal => {
                         let stereo = |cmd: &str| ir_cmd("stereo", cmd, ev_type, debug);
                         let stereo_once = |cmd: &str| ir_cmd_once("stereo", cmd, debug);
                         match (&k, ev_type) {
-                            (KEY_T, Pressed) => {
-                                println!("Entering TV mode");
-                                mode = TV;
-                            }
                             (KEY_P, Pressed) => {
                                 stereo_once("KEY_POWER");
                                 sleep(Duration::from_secs(1));
@@ -390,12 +404,6 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
                         let tv_once = |cmd: &str| ir_cmd_once("tv", cmd, debug);
                         let switcher = |cmd: &str| ir_cmd("switcher", cmd, ev_type, debug);
                         match &k {
-                            KEY_T => {
-                                if ev_type == Pressed {
-                                    println!("Entering normal mode");
-                                    mode = Normal
-                                }
-                            }
                             KEY_SPACE => {
                                 if ev_type == Pressed {
                                     tv_once("KEY_AUX");
@@ -504,8 +512,9 @@ fn mpris(cmd: &str, debug: bool) {
 }
 
 // program mode
-#[derive(Debug)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
 enum Mode {
+    Idle, // let the OS handle keypresses
     Normal,
     TV,
 }
