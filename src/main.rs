@@ -213,7 +213,7 @@ fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Err
 
 // read from 'rx', responding to events
 fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
-    let lifx_sock = UdpSocket::bind("0.0.0.0:56700").unwrap();
+    let lifx_sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
     lifx_sock
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
