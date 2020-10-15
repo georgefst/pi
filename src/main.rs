@@ -38,8 +38,6 @@ stability
         e.g. mpris play/pause hangs for ~10s when spotify hasnt been active for a while
             this causes other commands to be queued rather than just firing
 correctness
-    going idle only disables xinput for the current device, although mode is global
-        this isn't a huge issue since in practice we're just  using the one physical device
     xinput enable on kill
 performance
 features
@@ -109,20 +107,17 @@ fn main() {
 
 // create a new thread to read events from the device at p, and send them on s
 // if the device doesn't have key events (eg. a mouse), it is ignored
-fn read_dev(tx: Sender<(InputEvent, Option<String>)>, path: PathBuf, debug: bool) {
+fn read_dev(tx: Sender<InputEvent>, path: PathBuf, debug: bool) {
     let p = path.clone();
     thread::spawn(move || match File::open(path) {
         Ok(file) => match Device::new_from_fd(file) {
             Ok(dev) => {
                 if dev.has_event_type(&EventType::EV_KEY) {
-                    if let Some(phys) = dev.phys() {
-                        xinput(String::from(phys), XInput::Disable, debug);
-                    }
+                    //TODO we shouldn't disable if we are currently in 'Idle' mode
+                    xinput(XInput::Disable, debug);
                     loop {
                         match dev.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING) {
-                            Ok((_, event)) => tx
-                                .send((event, dev.phys().map(|s| String::from(s))))
-                                .unwrap(),
+                            Ok((_, event)) => tx.send(event).unwrap(),
                             Err(e) => {
                                 println!(
                                     "Failed to get next event, abandoning device: {} ({:?})",
@@ -214,7 +209,7 @@ fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Err
 }
 
 // read from 'rx', responding to events
-fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
+fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
     let mut key_send_buf = [0; 2];
     let key_send_addr = SocketAddr::new(KEY_SEND_IP, KEY_SEND_PORT);
     let key_send_sock = &UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0))).unwrap();
@@ -245,7 +240,7 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
     let mut switching = false; // mode switch key was just pressed
 
     loop {
-        let (e, phys) = rx.recv().unwrap();
+        let e = rx.recv().unwrap();
         if let EventCode::EV_KEY(k) = e.event_code {
             let ev_type = KeyEventType::from(e.value);
             if debug {
@@ -265,14 +260,10 @@ fn respond_to_events(rx: Receiver<(InputEvent, Option<String>)>, debug: bool) {
                 };
                 if let Some(new_mode) = new_mode {
                     if old_mode == Idle {
-                        if let Some(phys) = phys.clone() {
-                            xinput(phys, XInput::Disable, debug)
-                        }
+                        xinput(XInput::Disable, debug)
                     };
                     if new_mode == Idle {
-                        if let Some(phys) = phys.clone() {
-                            xinput(phys, XInput::Enable, debug)
-                        }
+                        xinput(XInput::Enable, debug)
                     };
                     mode = new_mode;
                     println!("Entering mode: {:?}", new_mode);
@@ -494,26 +485,25 @@ enum XInput {
     Enable,
     Disable,
 }
-// enable, disable all devices with the MAC 'phys'
-fn xinput(phys: String, action: XInput, debug: bool) {
+// enable, disable all keyboards (devices with EV_KEY events)
+//TODO this is noticeably slow, there's probably a better way ("xinput list --name-only"? (how to filter?))
+fn xinput(action: XInput, debug: bool) {
     for dir_entry in read_dir(&EVDEV_DIR).unwrap() {
         let path = dir_entry.unwrap().path();
         if !path.is_dir() {
             let fd = File::open(path).unwrap();
             if let Ok(dev) = Device::new_from_fd(fd) {
-                if let Some(phys1) = dev.phys() {
-                    if phys1 == phys {
-                        let dev_name = dev.name().unwrap();
-                        let action_str = match action {
-                            XInput::Enable => "enable",
-                            XInput::Disable => "disable",
-                        };
-                        let res = Command::new("xinput")
-                            .args(&[action_str, dev_name])
-                            .output();
-                        let cmd_name = String::from(action_str) + (" xinput device");
-                        handle_cmd(res, &cmd_name, dev_name, debug);
-                    }
+                if dev.has_event_type(&EventType::EV_KEY) {
+                    let dev_name = dev.name().unwrap();
+                    let action_str = match action {
+                        XInput::Enable => "enable",
+                        XInput::Disable => "disable",
+                    };
+                    let res = Command::new("xinput")
+                        .args(&[action_str, dev_name])
+                        .output();
+                    let cmd_name = String::from(action_str) + (" xinput device");
+                    handle_cmd(res, &cmd_name, dev_name, debug);
                 }
             }
         }
@@ -535,7 +525,7 @@ fn mpris(cmd: &str, debug: bool) {
 // program mode
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
 enum Mode {
-    Idle, // let the OS handle keypresses
+    Idle,    // let the OS handle keypresses
     Sending, // send keypresses over UDP
     Normal,
     TV,
