@@ -253,7 +253,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                         KEY_ESC => Some(Idle),
                         KEY_SPACE => Some(Normal),
                         KEY_T => Some(TV),
-                        KEY_S => Some(Sending),
+                        KEY_COMMA => Some(Sending),
                         _ => None,
                     },
                     _ => None,
