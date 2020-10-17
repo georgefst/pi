@@ -285,6 +285,8 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                     mode = new_mode;
                     println!("Entering mode: {:?}", new_mode);
                 }
+            } else if held.contains(&KEY_RIGHTALT) {
+                // just wait for everything to be released
             } else {
                 match mode {
                     Idle => (),
