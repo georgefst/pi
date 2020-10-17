@@ -5,7 +5,6 @@ use inotify::{EventMask, Inotify, WatchMask};
 use lifx_core::Message;
 use lifx_core::RawMessage;
 use lifx_core::HSBK;
-use std::fs::{read_dir, File};
 use std::io;
 use std::iter::Iterator;
 use std::net::*;
@@ -16,6 +15,10 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
+use std::{
+    collections::HashSet,
+    fs::{read_dir, File},
+};
 
 use KeyEventType::*;
 use Mode::*;
@@ -27,9 +30,6 @@ maintainability
         tx, tx1...
         read_dev itself shouldnt be responsible for spawning the thread
         review all uses of 'clone', 'move', '&' etc.
-        mode_transition closure
-            avoids repeated code in printing old and new mode
-            needs to change mutable variable, ideally without it being explicitly passed in
         have 'handle_cmd' actually take a Command
             when debugging, print the command text
     better event names in lircd.conf
@@ -233,30 +233,47 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
             saturation: 0,
         }
     });
-    let mut ctrl = false;
-    let mut _shift = false;
-    let mut _alt = false;
     let mut mode = Normal;
-    let mut switching = false; // mode switch key was just pressed
+    let mut held = HashSet::new(); // keys which have been pressed since they were last released
+    let mut last_key = KEY_RESERVED; // will be updated before it's ever read
 
     loop {
         let e = rx.recv().unwrap();
         if let EventCode::EV_KEY(k) = e.event_code {
             let ev_type = KeyEventType::from(e.value);
+
+            // update state
+            match ev_type {
+                Pressed => {
+                    held.insert(k.clone());
+                    last_key = k.clone();
+                }
+                Released => {
+                    held.remove(&k);
+                }
+                Repeated => {}
+            }
+            let ctrl = held.contains(&KEY_LEFTCTRL) || held.contains(&KEY_RIGHTCTRL);
+            let _shift = held.contains(&KEY_LEFTSHIFT) || held.contains(&KEY_RIGHTSHIFT);
+            let _alt = held.contains(&KEY_LEFTALT); // RIGHT_ALT is reserved for switching modes
+
             if debug {
                 println!("{:?},  {:?}", k, ev_type);
             }
-            if switching {
+
+            // right-alt released - switch mode
+            // we only do this when nothing is held, to avoid confusing X, virtual keyboards etc.
+            if k == KEY_RIGHTALT && ev_type == Released && held.is_empty() {
                 let old_mode = mode;
-                let new_mode = match ev_type {
-                    Released => match &k {
-                        KEY_ESC => Some(Idle),
-                        KEY_SPACE => Some(Normal),
-                        KEY_T => Some(TV),
-                        KEY_COMMA => Some(Sending),
-                        _ => None,
-                    },
-                    _ => None,
+                let new_mode = match last_key {
+                    KEY_ESC => Some(Idle),
+                    KEY_SPACE => Some(Normal),
+                    KEY_T => Some(TV),
+                    KEY_COMMA => Some(Sending),
+                    _ => {
+                        println!("Key does not correspond to a mode: {:?}", last_key);
+                        None
+                    }
                 };
                 if let Some(new_mode) = new_mode {
                     if old_mode == Idle {
@@ -267,28 +284,8 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                     };
                     mode = new_mode;
                     println!("Entering mode: {:?}", new_mode);
-                    switching = false;
                 }
             } else {
-                match (&k, ev_type) {
-                    // stuff that happens in all modes
-                    (KEY_LEFTCTRL, Pressed) => ctrl = true,
-                    (KEY_RIGHTCTRL, Pressed) => ctrl = true,
-                    (KEY_LEFTSHIFT, Pressed) => _shift = true,
-                    (KEY_RIGHTSHIFT, Pressed) => _shift = true,
-                    (KEY_LEFTALT, Pressed) => _alt = true,
-                    (KEY_LEFTCTRL, Released) => ctrl = false,
-                    (KEY_RIGHTCTRL, Released) => ctrl = false,
-                    (KEY_LEFTSHIFT, Released) => _shift = false,
-                    (KEY_RIGHTSHIFT, Released) => _shift = false,
-                    (KEY_LEFTALT, Released) => _alt = false,
-                    (KEY_RIGHTALT, Released) => {
-                        switching = true;
-                        println!("Switching: select mode...")
-                    }
-                    _ => (),
-                }
-                //TODO if one of the modifier keys matches, we shouldn't get this far
                 match mode {
                     Idle => (),
                     Sending => {
