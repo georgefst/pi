@@ -1,11 +1,11 @@
 use clap::{self, Clap};
 use evdev_rs::enums::{EventCode, EventType, EV_KEY::*};
 use evdev_rs::*;
+use gpio::{GpioIn, GpioOut, GpioValue};
 use inotify::{EventMask, Inotify, WatchMask};
 use lifx_core::Message;
 use lifx_core::RawMessage;
 use lifx_core::HSBK;
-use std::io;
 use std::iter::Iterator;
 use std::net::*;
 use std::path::PathBuf;
@@ -15,10 +15,12 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
+use std::{collections::HashMap, io};
 use std::{
     collections::HashSet,
     fs::{read_dir, File},
 };
+use strum::*; // should be strum::EnumIter, but https://github.com/rust-analyzer/rust-analyzer/issues/6053
 
 use KeyEventType::*;
 use Mode::*;
@@ -212,10 +214,12 @@ fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Err
 
 // read from 'rx', responding to events
 fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
+    // set up evdev-share
     let mut key_send_buf = [0; 2];
     let key_send_addr = SocketAddr::new(KEY_SEND_IP, KEY_SEND_PORT);
     let key_send_sock = &UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0))).unwrap();
 
+    // set up LIFX
     let lifx_sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
     lifx_sock
         .set_read_timeout(Some(Duration::from_secs(3)))
@@ -239,6 +243,22 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
     let mut held = HashSet::new(); // keys which have been pressed since they were last released
     let mut last_key = KEY_RESERVED; // will be updated before it's ever read
 
+    // set up GPIO stuff
+    let mut gpio_button = gpio::sysfs::SysFsGpioInput::open(15).unwrap();
+    let mut led_map = HashMap::new();
+    for mode in Mode::iter() {
+        if let Some(led) = mode.led() {
+            led_map.insert(mode, gpio::sysfs::SysFsGpioOutput::open(led).unwrap());
+        }
+    }
+    let mut set_led = |mode: Mode, x: bool| {
+        if let Some(led) = led_map.get_mut(&mode) {
+            led.set_value(x)
+                .unwrap_or_else(|e| println!("Failed to set GPIO: {}", e))
+        }
+    };
+    set_led(mode, true);
+
     loop {
         let e = rx.recv().unwrap();
         if let EventCode::EV_KEY(k) = e.event_code {
@@ -258,6 +278,14 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
             let ctrl = held.contains(&KEY_LEFTCTRL) || held.contains(&KEY_RIGHTCTRL);
             let _shift = held.contains(&KEY_LEFTSHIFT) || held.contains(&KEY_RIGHTSHIFT);
             let _alt = held.contains(&KEY_LEFTALT); // RIGHT_ALT is reserved for switching modes
+            let _button = match gpio_button.read_value() {
+                Ok(GpioValue::Low) => true,
+                Ok(GpioValue::High) => false,
+                Err(e) => {
+                    println!("Failed to read from GPIO button: {}", e);
+                    false
+                }
+            };
 
             if debug {
                 println!("{:?},  {:?}", k, ev_type);
@@ -286,6 +314,8 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                     };
                     mode = new_mode;
                     println!("Entering mode: {:?}", new_mode);
+                    set_led(old_mode, false);
+                    set_led(new_mode, true);
                 }
             } else if held.contains(&KEY_RIGHTALT) {
                 // just wait for everything to be released
@@ -524,12 +554,22 @@ fn mpris(cmd: &str, debug: bool) {
 }
 
 // program mode
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, EnumIter)]
 enum Mode {
     Idle,    // let the OS handle keypresses
     Sending, // send keypresses over UDP
     Normal,
     TV,
+}
+impl Mode {
+    fn led(self) -> Option<u16> {
+        match self {
+            Idle => Some(6),    // yellow
+            Sending => Some(5), // green
+            Normal => Some(12), // blue
+            TV => Some(13),     // red
+        }
+    }
 }
 
 //TODO suggest this be used in evdev library

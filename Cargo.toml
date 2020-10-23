@@ -6,7 +6,9 @@ edition = "2018"
 
 [dependencies]
 evdev-rs = "0.4.0"
+gpio = "0.4.1"
 inotify = "0.8.0"
+strum = { version = "0.19", features = ["derive"] }
 
 #TODO need 3.0, but not stable yet
 # clap = "2.33.0"
