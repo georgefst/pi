@@ -114,6 +114,8 @@ fn read_dev(tx: Sender<InputEvent>, path: PathBuf, debug: bool) {
             Ok(dev) => {
                 if dev.has_event_type(&EventType::EV_KEY) {
                     //TODO we shouldn't disable if we are currently in 'Idle' mode
+                    //TODO this reruns for all devices, which is a bit pointless
+                    //TODO resolve ambiguity (see error messages when Logitech wireless mouse is connected)
                     xinput(XInput::Disable, debug);
                     loop {
                         match dev.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING) {
