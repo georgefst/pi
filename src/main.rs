@@ -240,6 +240,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
         }
     });
     let mut mode = Normal;
+    let mut prev_mode = Normal; // the mode we were in before the current one
     let mut held = HashSet::new(); // keys which have been pressed since they were last released
     let mut last_key = KEY_RESERVED; // will be updated before it's ever read
 
@@ -294,27 +295,28 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
             // right-alt released - switch mode
             // we only do this when nothing is held, to avoid confusing X, virtual keyboards etc.
             if k == KEY_RIGHTALT && ev_type == Released && held.is_empty() {
-                let old_mode = mode;
                 let new_mode = match last_key {
                     KEY_ESC => Some(Idle),
                     KEY_SPACE => Some(Normal),
                     KEY_T => Some(TV),
                     KEY_COMMA => Some(Sending),
+                    KEY_RIGHTALT => Some(prev_mode), // this is a bit special - nothing else was pressed
                     _ => {
                         println!("Key does not correspond to a mode: {:?}", last_key);
                         None
                     }
                 };
                 if let Some(new_mode) = new_mode {
-                    if old_mode == Idle {
+                    prev_mode = mode;
+                    mode = new_mode;
+                    if prev_mode == Idle {
                         xinput(XInput::Disable, debug)
                     };
                     if new_mode == Idle {
                         xinput(XInput::Enable, debug)
                     };
-                    mode = new_mode;
                     println!("Entering mode: {:?}", new_mode);
-                    set_led(old_mode, false);
+                    set_led(prev_mode, false);
                     set_led(new_mode, true);
                 }
             } else if held.contains(&KEY_RIGHTALT) {
