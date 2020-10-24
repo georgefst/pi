@@ -25,6 +25,25 @@ use strum::*; // should be strum::EnumIter, but https://github.com/rust-analyzer
 use KeyEventType::*;
 use Mode::*;
 
+// use rspotify::
+use rspotify::client::Spotify;
+use rspotify::oauth2::Credentials;
+use rspotify::senum::Country;
+use rspotify::client::{Spotify, SpotifyBuilder};
+use rspotify::oauth2::{CredentialsBuilder, OAuthBuilder};
+// use rspotify::client::SpotifyBuilder;
+// use rspotify::oauth2::{CredentialsBuilder, OAuthBuilder};
+
+fn main1() {
+    let client_credential = Credentials::default();
+    // let spotify = Spotify::crede
+    //     .client_credentials_manager(client_credential)
+    //     .build();
+    let birdy_uri = "spotify:artist:2WX2uTcsvV5OnS0inACecP";
+    let tracks = spotify.artist_top_tracks(birdy_uri, Country::UnitedStates);
+    println!("{:?}", tracks.unwrap());
+}
+
 /* TODO
 
 maintainability
@@ -68,6 +87,12 @@ fn main() {
     // get data from command line args
     let opts: Opts = Opts::parse();
     let debug = opts.debug;
+
+
+
+
+
+
 
     // set up channel for keyboard events
     let (tx, rx) = channel();

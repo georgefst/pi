@@ -15,3 +15,10 @@ strum = { version = "0.19", features = ["derive"] }
 # https://github.com/Aehmlo/lifxi/issues/7
 # lifxi = "0.1.1"
 lifx-core = "0.2.0"
+
+#TODO use from crates.io when 0.11 released (changes to features, support for rustls)
+#TODO work out how to 'allow-older' instead of needing my fork
+[dependencies.rspotify]
+git = "https://github.com/georgefst/rspotify"
+default-features = false
+features = ["client-ureq", "ureq-rustls-tls"]
