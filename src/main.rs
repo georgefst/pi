@@ -1,7 +1,7 @@
 use clap::{self, Clap};
 use evdev_rs::enums::{EventCode, EventType, EV_KEY::*};
 use evdev_rs::*;
-use gpio::{GpioIn, GpioOut, GpioValue};
+use gpio::{sysfs::SysFsGpioOutput, GpioOut};
 use inotify::{EventMask, Inotify, WatchMask};
 use lifx_core::Message;
 use lifx_core::RawMessage;
@@ -245,7 +245,6 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
     let mut last_key = KEY_RESERVED; // will be updated before it's ever read
 
     // set up GPIO stuff
-    let mut gpio_button = gpio::sysfs::SysFsGpioInput::open(15).unwrap();
     let mut led_map = HashMap::new();
     for mode in Mode::iter() {
         if let Some(led) = mode.led() {
@@ -279,14 +278,6 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
             let ctrl = held.contains(&KEY_LEFTCTRL) || held.contains(&KEY_RIGHTCTRL);
             let _shift = held.contains(&KEY_LEFTSHIFT) || held.contains(&KEY_RIGHTSHIFT);
             let _alt = held.contains(&KEY_LEFTALT); // RIGHT_ALT is reserved for switching modes
-            let _button = match gpio_button.read_value() {
-                Ok(GpioValue::Low) => true,
-                Ok(GpioValue::High) => false,
-                Err(e) => {
-                    println!("Failed to read from GPIO button: {}", e);
-                    false
-                }
-            };
 
             if debug {
                 println!("{:?},  {:?}", k, ev_type);
