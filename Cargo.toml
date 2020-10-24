@@ -5,15 +5,11 @@ authors = ["George Thomas <georgefsthomas@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+clap = "3.0.0-beta.2"
 evdev-rs = "0.4.0"
 gpio = "0.4.1"
 inotify = "0.8.0"
 strum = { version = "0.19", features = ["derive"] }
-
-#TODO need 3.0, but not stable yet
-# clap = "2.33.0"
-# clap = "~3.0.0-beta1"
-clap = {git = "https://github.com/clap-rs/clap"}
 
 #TODO higher level, but doesn't have a LAN interface (yet - they are planning on it)
 # https://github.com/Aehmlo/lifxi/issues/7

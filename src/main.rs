@@ -53,7 +53,7 @@ features
 // command line arg data
 #[derive(Clap, Debug)]
 struct Opts {
-    #[clap(short = "d", long = "debug")]
+    #[clap(short = 'd', long = "debug")]
     debug: bool, // print various extra data
 }
 
