@@ -248,7 +248,11 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
     let mut led_map = HashMap::new();
     for mode in Mode::iter() {
         if let Some(led) = mode.led() {
-            led_map.insert(mode, gpio::sysfs::SysFsGpioOutput::open(led).unwrap());
+            led_map.insert(
+                mode,
+                //TODO we often get a permission error here - possible race condition within 'open'
+                SysFsGpioOutput::open(led).expect(&format!("Could not open LED on port {}", led)),
+            );
         }
     }
     let mut set_led = |mode: Mode, x: bool| {
