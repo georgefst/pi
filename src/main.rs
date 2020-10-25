@@ -247,25 +247,26 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
     // set up GPIO stuff
     let mut led_map = HashMap::new();
     for mode in Mode::iter() {
-        if let Some(port) = mode.led() {
-            // copied from my 'gpio-button' crate - see there for more info
-            let gpio = loop {
-                match SysFsGpioOutput::open(port) {
-                    Ok(x) => {
-                        println!("Successfully opened GPIO {}", port);
-                        break x;
-                    }
-                    Err(e) => match e.kind() {
-                        io::ErrorKind::PermissionDenied => {
-                            println!("Permission error on GPIO {}, trying again", port);
-                            sleep(Duration::from_millis(100));
-                        }
-                        _ => panic!("Failed to open GPIO: {}", e),
-                    },
+        let port = mode.led();
+
+        // copied from my 'gpio-button' crate - see there for more info
+        let gpio = loop {
+            match SysFsGpioOutput::open(port) {
+                Ok(x) => {
+                    println!("Successfully opened GPIO {}", port);
+                    break x;
                 }
-            };
-            led_map.insert(mode, gpio);
-        }
+                Err(e) => match e.kind() {
+                    io::ErrorKind::PermissionDenied => {
+                        println!("Permission error on GPIO {}, trying again", port);
+                        sleep(Duration::from_millis(100));
+                    }
+                    _ => panic!("Failed to open GPIO: {}", e),
+                },
+            }
+        };
+
+        led_map.insert(mode, gpio);
     }
     let mut set_led = |mode: Mode, x: bool| {
         if let Some(led) = led_map.get_mut(&mode) {
@@ -574,13 +575,13 @@ enum Mode {
     Music,
 }
 impl Mode {
-    fn led(self) -> Option<u16> {
+    fn led(self) -> u16 {
         match self {
-            Idle => Some(16),   //white
-            Sending => Some(6), // yellow
-            Normal => Some(12), // blue
-            TV => Some(13),     // red
-            Music => Some(5),   // green
+            Idle => 16,   //white
+            Sending => 6, // yellow
+            Normal => 12, // blue
+            TV => 13,     // red
+            Music => 5,   // green
         }
     }
 }
