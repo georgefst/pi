@@ -307,6 +307,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                     KEY_SPACE => Some(Normal),
                     KEY_T => Some(TV),
                     KEY_COMMA => Some(Sending),
+                    KEY_M => Some(Music),
                     KEY_RIGHTALT => Some(prev_mode), // this is a bit special - nothing else was pressed
                     _ => {
                         println!("Key does not correspond to a mode: {:?}", last_key);
@@ -514,6 +515,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                             _ => (),
                         }
                     }
+                    Music => println!("Music mode not yet implemented!"),
                 }
             }
         }
@@ -569,6 +571,7 @@ enum Mode {
     Sending, // send keypresses over UDP
     Normal,
     TV,
+    Music,
 }
 impl Mode {
     fn led(self) -> Option<u16> {
@@ -577,6 +580,7 @@ impl Mode {
             Sending => Some(5), // green
             Normal => Some(12), // blue
             TV => Some(13),     // red
+            Music => Some(16),  //white)
         }
     }
 }
