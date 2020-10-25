@@ -39,9 +39,6 @@ stability
     more asnycness
         e.g. mpris play/pause hangs for ~10s when spotify hasnt been active for a while
             this causes other commands to be queued rather than just firing
-correctness
-    xinput enable on kill
-performance
 features
     train
     weather
@@ -350,6 +347,17 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                         let stereo = |cmd: &str| ir_cmd("stereo", cmd, ev_type, debug);
                         let stereo_once = |cmd: &str| ir_cmd_once("stereo", cmd, debug);
                         match (&k, ev_type) {
+                            (KEY_ESC, Released) => {
+                                if ctrl {
+                                    xinput(XInput::Enable, debug);
+                                    for (_mode, mut led) in led_map {
+                                        led.set_low().unwrap_or_else(|e| {
+                                            println!("Failed to reset LED: {}", e)
+                                        });
+                                    }
+                                    panic!("Program ended by keypress")
+                                }
+                            }
                             (KEY_P, Pressed) => {
                                 stereo_once("KEY_POWER");
                                 sleep(Duration::from_secs(1));
