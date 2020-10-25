@@ -576,11 +576,11 @@ enum Mode {
 impl Mode {
     fn led(self) -> Option<u16> {
         match self {
-            Idle => Some(6),    // yellow
-            Sending => Some(5), // green
+            Idle => Some(16),   //white
+            Sending => Some(6), // yellow
             Normal => Some(12), // blue
             TV => Some(13),     // red
-            Music => Some(16),  //white)
+            Music => Some(5),   // green
         }
     }
 }
