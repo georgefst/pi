@@ -61,7 +61,7 @@ const LIFX_PORT: u16 = 56700;
 const KEY_SEND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 236)); //TODO set from CLI
 const KEY_SEND_PORT: u16 = 56702; // TODO ditto
 const RETRY_PAUSE_MS: u64 = 100;
-const RETRY_MAX: i32 = 100;
+const RETRY_MAX: i32 = 30;
 
 fn main() {
     // get data from command line args
@@ -114,25 +114,26 @@ fn read_dev(tx: Sender<InputEvent>, path: PathBuf, debug: bool) {
         let file = loop {
             match File::open(path.clone()) {
                 Ok(f) => break f,
-                Err(e) => {
-                    println!("Couldn't open device: {} ({:?})", path.to_str().unwrap(), e);
-                    match e.kind() {
-                        io::ErrorKind::PermissionDenied => {
-                            if attempts >= RETRY_MAX {
-                                println!(
-                                    "Giving up on new device - too many attempts: {}, {}",
-                                    path.to_str().unwrap(),
-                                    RETRY_MAX
-                                );
-                                return ();
-                            } else {
-                                attempts += 1;
-                                sleep(Duration::from_millis(RETRY_PAUSE_MS));
-                            }
+                Err(e) => match e.kind() {
+                    io::ErrorKind::PermissionDenied => {
+                        if attempts >= RETRY_MAX {
+                            println!(
+                                "Giving up on new device - too many attempts: {}, {}",
+                                path.to_str().unwrap(),
+                                RETRY_MAX
+                            );
+                            return ();
+                        } else {
+                            attempts += 1;
+                            sleep(Duration::from_millis(RETRY_PAUSE_MS));
                         }
-                        _ => return (),
                     }
-                }
+                    _ => {
+                        return {
+                            println!("Couldn't open device: {} ({:?})", path.to_str().unwrap(), e);
+                        }
+                    }
+                },
             }
         };
         match Device::new_from_fd(file) {
