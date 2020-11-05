@@ -263,7 +263,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
         }
     });
     let mut mode = Normal;
-    let mut prev_mode = Normal; // the mode we were in before the current one
+    let mut prev_mode = Sending; // the mode we were in before the current one
     let mut held = HashSet::new(); // keys which have been pressed since they were last released
     let mut last_key = KEY_RESERVED; // will be updated before it's ever read
 
