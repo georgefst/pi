@@ -60,6 +60,8 @@ const LIFX_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 187)); //TODO scan
 const LIFX_PORT: u16 = 56700;
 const KEY_SEND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 236)); //TODO set from CLI
 const KEY_SEND_PORT: u16 = 56702; // TODO ditto
+const RETRY_PAUSE_MS: u64 = 100;
+const RETRY_MAX: i32 = 100;
 
 fn main() {
     // get data from command line args
@@ -91,8 +93,6 @@ fn main() {
                     if let Some(name) = event.name {
                         let path = name.to_str().unwrap();
                         println!("Found new device: {}", path);
-                        //TODO cf. my Haskell lib for more principled solution
-                        sleep(Duration::from_millis(300)); // sleep to avoid permission error
                         let full_path = PathBuf::from(EVDEV_DIR).join(path);
                         read_dev(tx1.clone(), full_path, debug);
                     }
@@ -107,9 +107,35 @@ fn main() {
 // create a new thread to read events from the device at p, and send them on s
 // if the device doesn't have key events (eg. a mouse), it is ignored
 fn read_dev(tx: Sender<InputEvent>, path: PathBuf, debug: bool) {
-    let p = path.clone();
-    thread::spawn(move || match File::open(path) {
-        Ok(file) => match Device::new_from_fd(file) {
+    thread::spawn(move || {
+        // keep retrying on permission error - else we get failures on startup and with new devices
+        //TODO cf. my Haskell evdev lib for more principled solution
+        let mut attempts = 0;
+        let file = loop {
+            match File::open(path.clone()) {
+                Ok(f) => break f,
+                Err(e) => {
+                    println!("Couldn't open device: {} ({:?})", path.to_str().unwrap(), e);
+                    match e.kind() {
+                        io::ErrorKind::PermissionDenied => {
+                            if attempts >= RETRY_MAX {
+                                println!(
+                                    "Giving up on new device - too many attempts: {}, {}",
+                                    path.to_str().unwrap(),
+                                    RETRY_MAX
+                                );
+                                return ();
+                            } else {
+                                attempts += 1;
+                                sleep(Duration::from_millis(RETRY_PAUSE_MS));
+                            }
+                        }
+                        _ => return (),
+                    }
+                }
+            }
+        };
+        match Device::new_from_fd(file) {
             Ok(dev) => {
                 if dev.has_event_type(&EventType::EV_KEY) {
                     //TODO we shouldn't disable if we are currently in 'Idle' mode
@@ -122,7 +148,7 @@ fn read_dev(tx: Sender<InputEvent>, path: PathBuf, debug: bool) {
                             Err(e) => {
                                 println!(
                                     "Failed to get next event, abandoning device: {} ({:?})",
-                                    p.to_str().unwrap(),
+                                    path.to_str().unwrap(),
                                     e
                                 );
                                 break;
@@ -132,10 +158,9 @@ fn read_dev(tx: Sender<InputEvent>, path: PathBuf, debug: bool) {
                 }
             }
             Err(e) => {
-                println!("Not an evdev device: {} ({:?})", p.to_str().unwrap(), e);
+                println!("Not an evdev device: {} ({:?})", path.to_str().unwrap(), e);
             }
-        },
-        Err(e) => println!("Couldn't open file: {} ({:?})", p.to_str().unwrap(), e),
+        }
     });
 }
 
@@ -256,7 +281,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                 Err(e) => match e.kind() {
                     io::ErrorKind::PermissionDenied => {
                         println!("Permission error on GPIO {}, trying again", port);
-                        sleep(Duration::from_millis(100));
+                        sleep(Duration::from_millis(RETRY_PAUSE_MS));
                     }
                     _ => panic!("Failed to open GPIO: {}", e),
                 },
