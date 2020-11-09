@@ -562,28 +562,27 @@ enum XInput {
     Enable,
     Disable,
 }
-// enable, disable all keyboards (devices with EV_KEY events)
-//TODO this is noticeably slow, there's probably a better way ("xinput list --name-only"? (how to filter?))
+// enable, disable all devices
 fn xinput(action: XInput, debug: bool) {
-    for dir_entry in read_dir(&EVDEV_DIR).unwrap() {
-        let path = dir_entry.unwrap().path();
-        if !path.is_dir() {
-            let fd = File::open(path).unwrap();
-            if let Ok(dev) = Device::new_from_fd(fd) {
-                if dev.has_event_type(&EventType::EV_KEY) {
-                    let dev_name = dev.name().unwrap();
-                    let action_str = match action {
-                        XInput::Enable => "enable",
-                        XInput::Disable => "disable",
-                    };
-                    let res = Command::new("xinput")
-                        .args(&[action_str, dev_name])
-                        .output();
-                    let cmd_name = String::from(action_str) + (" xinput device");
-                    handle_cmd(res, &cmd_name, dev_name, debug);
-                }
-            }
-        }
+    let devs = String::from_utf8(
+        Command::new("xinput")
+            .args(&["list", "--name-only"])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    for dev in devs
+        .lines()
+        .filter(|dev| dev.strip_prefix("Virtual").is_none())
+    {
+        let action_str = match action {
+            XInput::Enable => "enable",
+            XInput::Disable => "disable",
+        };
+        let res = Command::new("xinput").args(&[action_str, dev]).output();
+        let cmd_name = String::from(action_str) + (" xinput device");
+        handle_cmd(res, &cmd_name, dev, debug);
     }
 }
 
