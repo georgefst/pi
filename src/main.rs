@@ -613,8 +613,8 @@ impl Mode {
             Idle => 16,   //white
             Sending => 6, // yellow
             Normal => 12, // blue
-            TV => 13,     // red
-            Music => 5,   // green
+            TV => 5,      // green
+            Music => 13,  // red
         }
     }
 }
