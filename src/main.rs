@@ -52,6 +52,8 @@ features
 struct Opts {
     #[clap(short = 'd', long = "debug")]
     debug: bool, // print various extra data
+    #[clap(long = "no-gpio")]
+    no_gpio: bool, // for when LEDs aren't plugged in
 }
 
 // useful constants
@@ -101,7 +103,7 @@ fn main() {
         }
     });
 
-    respond_to_events(rx, debug);
+    respond_to_events(rx, opts);
 }
 
 // create a new thread to read events from the device at p, and send them on s
@@ -236,7 +238,7 @@ fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Err
 }
 
 // read from 'rx', responding to events
-fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
+fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
     // set up evdev-share
     let mut key_send_buf = [0; 2];
     let key_send_addr = SocketAddr::new(KEY_SEND_IP, KEY_SEND_PORT);
@@ -269,29 +271,33 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
 
     // set up GPIO stuff
     let mut led_map = HashMap::new();
-    for mode in Mode::iter() {
-        let port = mode.led();
+    if !opts.no_gpio {
+        for mode in Mode::iter() {
+            let port = mode.led();
 
-        // copied from my 'gpio-button' crate - see there for more info
-        let gpio = loop {
-            match SysFsGpioOutput::open(port) {
-                Ok(x) => {
-                    println!("Successfully opened GPIO {}", port);
-                    break x;
-                }
-                Err(e) => match e.kind() {
-                    io::ErrorKind::PermissionDenied => {
-                        println!("Permission error on GPIO {}, trying again", port);
-                        sleep(Duration::from_millis(RETRY_PAUSE_MS));
+            // copied from my 'gpio-button' crate - see there for more info
+            let gpio = loop {
+                match SysFsGpioOutput::open(port) {
+                    Ok(x) => {
+                        println!("Successfully opened GPIO {}", port);
+                        break x;
                     }
-                    _ => panic!("Failed to open GPIO: {}", e),
-                },
-            }
-        };
+                    Err(e) => match e.kind() {
+                        io::ErrorKind::PermissionDenied => {
+                            println!("Permission error on GPIO {}, trying again", port);
+                            sleep(Duration::from_millis(RETRY_PAUSE_MS));
+                        }
+                        _ => panic!("Failed to open GPIO: {}", e),
+                    },
+                }
+            };
 
-        led_map.insert(mode, gpio);
+            led_map.insert(mode, gpio);
+        }
     }
+
     let mut set_led = |mode: Mode, x: bool| {
+        //TODO this is a bit ugly - in practice guard passes iff '!opts.no_gpio'
         if let Some(led) = led_map.get_mut(&mode) {
             led.set_value(x)
                 .unwrap_or_else(|e| println!("Failed to set GPIO: {}", e))
@@ -319,7 +325,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
             let _shift = held.contains(&KEY_LEFTSHIFT) || held.contains(&KEY_RIGHTSHIFT);
             let _alt = held.contains(&KEY_LEFTALT); // RIGHT_ALT is reserved for switching modes
 
-            if debug {
+            if opts.debug {
                 println!("{:?},  {:?}", k, ev_type);
             }
 
@@ -342,10 +348,10 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                     prev_mode = mode;
                     mode = new_mode;
                     if prev_mode == Idle {
-                        xinput(XInput::Disable, debug)
+                        xinput(XInput::Disable, opts.debug)
                     };
                     if new_mode == Idle {
-                        xinput(XInput::Enable, debug)
+                        xinput(XInput::Enable, opts.debug)
                     };
                     println!("Entering mode: {:?}", new_mode);
                     set_led(prev_mode, false);
@@ -357,7 +363,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                 match mode {
                     Idle => (),
                     Sending => {
-                        if debug {
+                        if opts.debug {
                             println!("Sending: {:?}, {:?}", k, ev_type);
                         }
                         key_send_buf[0] = k as u8;
@@ -370,12 +376,12 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                             });
                     }
                     Normal => {
-                        let stereo = |cmd: &str| ir_cmd("stereo", cmd, ev_type, debug);
-                        let stereo_once = |cmd: &str| ir_cmd_once("stereo", cmd, debug);
+                        let stereo = |cmd: &str| ir_cmd("stereo", cmd, ev_type, opts.debug);
+                        let stereo_once = |cmd: &str| ir_cmd_once("stereo", cmd, opts.debug);
                         match (&k, ev_type) {
                             (KEY_ESC, Released) => {
                                 if ctrl {
-                                    xinput(XInput::Enable, debug);
+                                    xinput(XInput::Enable, opts.debug);
                                     for (_mode, mut led) in led_map {
                                         led.set_low().unwrap_or_else(|e| {
                                             println!("Failed to reset LED: {}", e)
@@ -392,9 +398,9 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                             (KEY_VOLUMEUP, _) => stereo("KEY_VOLUMEUP"),
                             (KEY_VOLUMEDOWN, _) => stereo("KEY_VOLUMEDOWN"),
                             (KEY_MUTE, _) => stereo("muting"),
-                            (KEY_PLAYPAUSE, Pressed) => mpris("PlayPause", debug),
-                            (KEY_PREVIOUSSONG, Pressed) => mpris("Previous", debug),
-                            (KEY_NEXTSONG, Pressed) => mpris("Next", debug),
+                            (KEY_PLAYPAUSE, Pressed) => mpris("PlayPause", opts.debug),
+                            (KEY_PREVIOUSSONG, Pressed) => mpris("Previous", opts.debug),
+                            (KEY_NEXTSONG, Pressed) => mpris("Next", opts.debug),
                             (KEY_LEFT, _) => {
                                 //TODO don't trigger on 'Released' (wait for 'or patterns'?)
                                 hsbk = HSBK {
@@ -488,9 +494,9 @@ fn respond_to_events(rx: Receiver<InputEvent>, debug: bool) {
                         }
                     }
                     TV => {
-                        let tv = |cmd: &str| ir_cmd("tv", cmd, ev_type, debug);
-                        let tv_once = |cmd: &str| ir_cmd_once("tv", cmd, debug);
-                        let switcher = |cmd: &str| ir_cmd("switcher", cmd, ev_type, debug);
+                        let tv = |cmd: &str| ir_cmd("tv", cmd, ev_type, opts.debug);
+                        let tv_once = |cmd: &str| ir_cmd_once("tv", cmd, opts.debug);
+                        let switcher = |cmd: &str| ir_cmd("switcher", cmd, ev_type, opts.debug);
                         match &k {
                             KEY_SPACE => {
                                 if ev_type == Pressed {
