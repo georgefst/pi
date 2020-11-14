@@ -397,7 +397,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                             }
                             (KEY_VOLUMEUP, _) => stereo("KEY_VOLUMEUP"),
                             (KEY_VOLUMEDOWN, _) => stereo("KEY_VOLUMEDOWN"),
-                            (KEY_MUTE, _) => stereo("muting"),
+                            (KEY_MUTE, Pressed) => stereo_once("muting"),
                             (KEY_PLAYPAUSE, Pressed) => mpris("PlayPause", opts.debug),
                             (KEY_PREVIOUSSONG, Pressed) => mpris("Previous", opts.debug),
                             (KEY_NEXTSONG, Pressed) => mpris("Next", opts.debug),
