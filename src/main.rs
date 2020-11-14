@@ -401,6 +401,15 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                             (KEY_PLAYPAUSE, Pressed) => mpris("PlayPause", opts.debug),
                             (KEY_PREVIOUSSONG, Pressed) => mpris("Previous", opts.debug),
                             (KEY_NEXTSONG, Pressed) => mpris("Next", opts.debug),
+                            (KEY_M, Pressed) => {
+                                //TODO we mostly use this when watching TV
+                                // would be preferable to just disable Mycroft whenever sound is being output be
+                                // any other application
+                                let res = Command::new("pactl")
+                                    .args(&["set-source-mute", "0", "toggle"])
+                                    .output();
+                                handle_cmd(res, "toggle mic", "", opts.debug);
+                            }
                             (KEY_LEFT, _) => {
                                 //TODO don't trigger on 'Released' (wait for 'or patterns'?)
                                 hsbk = HSBK {
