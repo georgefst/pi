@@ -34,6 +34,7 @@ maintainability
         review all uses of 'clone', 'move', '&' etc.
         have 'handle_cmd' actually take a Command
             when debugging, print the command text
+        'set_mic_mute' should set 'mic_muted' and calling 'set_led'
     better event names in lircd.conf
 stability
     more asnycness
@@ -272,8 +273,8 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
     // set up GPIO stuff
     let mut led_map = HashMap::new();
     if !opts.no_gpio {
-        for mode in Mode::iter() {
-            let port = mode.led().id();
+        for led in LED::iter() {
+            let port = led.id();
 
             // copied from my 'gpio-button' crate - see there for more info
             let gpio = loop {
@@ -292,18 +293,28 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                 }
             };
 
-            led_map.insert(mode, gpio);
+            led_map.insert(led, gpio);
         }
     }
 
-    let mut set_led = |mode: Mode, x: bool| {
+    let mut set_led = |led: LED, x: bool| {
         //TODO this is a bit ugly - in practice guard passes iff '!opts.no_gpio'
-        if let Some(led) = led_map.get_mut(&mode) {
+        if let Some(led) = led_map.get_mut(&led) {
             led.set_value(x)
                 .unwrap_or_else(|e| println!("Failed to set GPIO: {}", e))
         }
     };
-    set_led(mode, true);
+    set_led(mode.led(), true);
+
+    let set_mic_mute = |b: bool| {
+        let res = Command::new("pactl")
+            .args(&["set-source-mute", "0", &b.to_string()])
+            .output();
+        handle_cmd(res, "toggle mic", &b.to_string(), true);
+    };
+    let mut mic_muted = false;
+    set_mic_mute(mic_muted);
+    set_led(LED::Red, mic_muted);
 
     loop {
         let e = rx.recv().unwrap();
@@ -337,7 +348,6 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                     KEY_SPACE => Some(Normal),
                     KEY_T => Some(TV),
                     KEY_COMMA => Some(Sending),
-                    KEY_M => Some(Music),
                     KEY_RIGHTALT => Some(prev_mode), // this is a bit special - nothing else was pressed
                     _ => {
                         println!("Key does not correspond to a mode: {:?}", last_key);
@@ -354,8 +364,8 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                         xinput(XInput::Enable, opts.debug)
                     };
                     println!("Entering mode: {:?}", new_mode);
-                    set_led(prev_mode, false);
-                    set_led(new_mode, true);
+                    set_led(prev_mode.led(), false);
+                    set_led(new_mode.led(), true);
                 }
             } else if held.contains(&KEY_RIGHTALT) {
                 // just wait for everything to be released
@@ -405,10 +415,9 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                                 //TODO we mostly use this when watching TV
                                 // would be preferable to just disable Mycroft whenever sound is being output be
                                 // any other application
-                                let res = Command::new("pactl")
-                                    .args(&["set-source-mute", "0", "toggle"])
-                                    .output();
-                                handle_cmd(res, "toggle mic", "", opts.debug);
+                                mic_muted = !mic_muted;
+                                set_mic_mute(mic_muted);
+                                set_led(LED::Red, mic_muted);
                             }
                             (KEY_LEFT, _) => {
                                 //TODO don't trigger on 'Released' (wait for 'or patterns'?)
@@ -565,7 +574,6 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                             _ => (),
                         }
                     }
-                    Music => println!("Music mode not yet implemented!"),
                 }
             }
         }
@@ -640,7 +648,6 @@ enum Mode {
     Sending, // send keypresses over UDP
     Normal,
     TV,
-    Music,
 }
 impl Mode {
     fn led(self) -> LED {
@@ -649,7 +656,6 @@ impl Mode {
             Sending => LED::Yellow,
             Normal => LED::Blue,
             TV => LED::Green,
-            Music => LED::Red,
         }
     }
 }
