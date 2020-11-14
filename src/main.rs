@@ -273,7 +273,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
     let mut led_map = HashMap::new();
     if !opts.no_gpio {
         for mode in Mode::iter() {
-            let port = mode.led();
+            let port = mode.led().id();
 
             // copied from my 'gpio-button' crate - see there for more info
             let gpio = loop {
@@ -613,6 +613,26 @@ fn mpris(cmd: &str, debug: bool) {
     handle_cmd(res, "perform mpris command", cmd, debug);
 }
 
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, EnumIter)]
+enum LED {
+    Blue,
+    Green,
+    Red,
+    White,
+    Yellow,
+}
+impl LED {
+    fn id(&self) -> u16 {
+        match self {
+            LED::Blue => 12,
+            LED::Green => 13,
+            LED::Red => 5,
+            LED::White => 16,
+            LED::Yellow => 6,
+        }
+    }
+}
+
 // program mode
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, EnumIter)]
 enum Mode {
@@ -623,13 +643,13 @@ enum Mode {
     Music,
 }
 impl Mode {
-    fn led(self) -> u16 {
+    fn led(self) -> LED {
         match self {
-            Idle => 16,   //white
-            Sending => 6, // yellow
-            Normal => 12, // blue
-            TV => 5,      // green
-            Music => 13,  // red
+            Idle => LED::White,
+            Sending => LED::Yellow,
+            Normal => LED::Blue,
+            TV => LED::Green,
+            Music => LED::Red,
         }
     }
 }
