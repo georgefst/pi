@@ -342,7 +342,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                 Repeated => {}
             }
             let ctrl = held.contains(&KEY_LEFTCTRL) || held.contains(&KEY_RIGHTCTRL);
-            let _shift = held.contains(&KEY_LEFTSHIFT) || held.contains(&KEY_RIGHTSHIFT);
+            let shift = held.contains(&KEY_LEFTSHIFT) || held.contains(&KEY_RIGHTSHIFT);
             let _alt = held.contains(&KEY_LEFTALT); // RIGHT_ALT is reserved for switching modes
 
             if opts.debug {
@@ -428,90 +428,117 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                                 set_mic_mute(mic_muted);
                                 set_led(LED::Red, mic_muted);
                             }
+                            //TODO this ought to be drier, somehow
                             (KEY_LEFT, _) => {
+                                let inc = 256;
                                 //TODO don't trigger on 'Released' (wait for 'or patterns'?)
                                 hsbk = HSBK {
                                     hue: if ctrl {
-                                        hsbk.hue.wrapping_sub(4096)
+                                        hsbk.hue.wrapping_sub(inc * 16)
+                                    } else if shift {
+                                        hsbk.hue.wrapping_sub(inc * 4)
                                     } else {
-                                        hsbk.hue.wrapping_sub(256)
+                                        hsbk.hue.wrapping_sub(inc)
                                     },
                                     ..hsbk
                                 };
                                 set_hsbk(&lifx_sock, lifx_target, hsbk);
                             }
                             (KEY_RIGHT, _) => {
+                                let inc = 256;
                                 hsbk = HSBK {
                                     hue: if ctrl {
-                                        hsbk.hue.wrapping_add(4096)
+                                        hsbk.hue.wrapping_add(inc * 16)
+                                    } else if shift {
+                                        hsbk.hue.wrapping_add(inc * 4)
                                     } else {
-                                        hsbk.hue.wrapping_add(256)
+                                        hsbk.hue.wrapping_add(inc)
                                     },
                                     ..hsbk
                                 };
                                 set_hsbk(&lifx_sock, lifx_target, hsbk);
                             }
                             (KEY_EQUAL, _) => {
+                                let max = 65535;
                                 hsbk = HSBK {
                                     saturation: if ctrl {
-                                        65535
+                                        max
                                     } else {
-                                        hsbk.saturation.checked_add(1024).unwrap_or(65535)
+                                        hsbk.saturation
+                                            .checked_add(if shift { 2048 } else { 512 })
+                                            .unwrap_or(max)
                                     },
                                     ..hsbk
                                 };
                                 set_hsbk(&lifx_sock, lifx_target, hsbk);
                             }
                             (KEY_MINUS, _) => {
+                                let min = 0;
                                 hsbk = HSBK {
                                     saturation: if ctrl {
-                                        0
+                                        min
                                     } else {
-                                        hsbk.saturation.checked_sub(1024).unwrap_or(0)
+                                        hsbk.saturation
+                                            .checked_sub(if shift { 2048 } else { 512 })
+                                            .unwrap_or(min)
                                     },
                                     ..hsbk
                                 };
                                 set_hsbk(&lifx_sock, lifx_target, hsbk);
                             }
                             (KEY_UP, _) => {
+                                let max = 65535;
                                 hsbk = HSBK {
                                     brightness: if ctrl {
-                                        65535
+                                        max
                                     } else {
-                                        hsbk.brightness.checked_add(1024).unwrap_or(65535)
+                                        hsbk.brightness
+                                            .checked_add(if shift { 2048 } else { 512 })
+                                            .unwrap_or(max)
                                     },
                                     ..hsbk
                                 };
                                 set_hsbk(&lifx_sock, lifx_target, hsbk);
                             }
                             (KEY_DOWN, _) => {
+                                let min = 0;
                                 hsbk = HSBK {
                                     brightness: if ctrl {
-                                        0
+                                        min
                                     } else {
-                                        hsbk.brightness.checked_sub(1024).unwrap_or(0)
+                                        hsbk.brightness
+                                            .checked_sub(if shift { 2048 } else { 512 })
+                                            .unwrap_or(min)
                                     },
                                     ..hsbk
                                 };
                                 set_hsbk(&lifx_sock, lifx_target, hsbk);
                             }
                             (KEY_LEFTBRACE, _) => {
+                                let min = 9000;
                                 hsbk = HSBK {
                                     kelvin: if ctrl {
-                                        9000
+                                        min
                                     } else {
-                                        std::cmp::min(hsbk.kelvin + 65, 9000)
+                                        std::cmp::min(
+                                            hsbk.kelvin + (if shift { 260 } else { 65 }),
+                                            min,
+                                        )
                                     },
                                     ..hsbk
                                 };
                                 set_hsbk(&lifx_sock, lifx_target, hsbk);
                             }
                             (KEY_RIGHTBRACE, _) => {
+                                let min = 2500;
                                 hsbk = HSBK {
                                     kelvin: if ctrl {
-                                        2500
+                                        min
                                     } else {
-                                        std::cmp::max(hsbk.kelvin - 65, 2500)
+                                        std::cmp::max(
+                                            hsbk.kelvin - (if shift { 260 } else { 65 }),
+                                            min,
+                                        )
                                     },
                                     ..hsbk
                                 };
