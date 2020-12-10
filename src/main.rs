@@ -259,6 +259,8 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
 
     // initialise state
     let mut hsbk = get_hsbk(&lifx_sock, lifx_target).unwrap_or_else(|e| {
+        //TODO run this each time we change color (but not on 'Repeated')
+        // ditto power
         println!(
             "Failed to get HSBK from light - initialising all fields to 0. ({:?})",
             e
@@ -270,7 +272,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
             saturation: 0,
         }
     });
-    let mut lifx_power = PowerLevel::Enabled; //TODO read at startup
+    let mut lifx_power = PowerLevel::Enabled;
     let mut mode = Normal;
     let mut prev_mode = Sending; // the mode we were in before the current one
     let mut held = HashSet::new(); // keys which have been pressed since they were last released
