@@ -307,8 +307,8 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
 
     let set_mic_mute = |b: bool| {
         let res = Command::new("pactl")
-        .args(&["set-source-mute", "0", &b.to_string()])
-        .output();
+            .args(&["set-source-mute", "0", &b.to_string()])
+            .output();
         handle_cmd(res, "toggle mic", &b.to_string(), true);
     };
     let mut mic_muted = false;
