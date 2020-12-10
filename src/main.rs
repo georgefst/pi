@@ -3,7 +3,6 @@ use evdev_rs::enums::{EventCode, EventType, EV_KEY::*};
 use evdev_rs::*;
 use gpio::{sysfs::SysFsGpioOutput, GpioOut};
 use inotify::{EventMask, Inotify, WatchMask};
-use lifx_core::Message;
 use lifx_core::RawMessage;
 use lifx_core::HSBK;
 use lifx_core::{Message, PowerLevel};
