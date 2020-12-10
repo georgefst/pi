@@ -59,7 +59,7 @@ struct Opts {
 
 // useful constants
 const EVDEV_DIR: &str = "/dev/input/";
-const LIFX_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 187)); //TODO scan for this at startup
+const LIFX_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 68, 112)); //TODO scan for this at startup
 const LIFX_PORT: u16 = 56700;
 const KEY_SEND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 236)); //TODO set from CLI
 const KEY_SEND_PORT: u16 = 56702; // TODO ditto
