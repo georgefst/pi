@@ -216,6 +216,10 @@ fn lifx_send(sock: &UdpSocket, target: SocketAddr, msg: Message) -> Result<(), i
     let raw = RawMessage::build(&Default::default(), msg).unwrap();
     sock.send_to(&raw.pack().unwrap(), &target).map(|_| ())
 }
+fn set_lifx_power(sock: &UdpSocket, target: SocketAddr, level: PowerLevel) {
+    let msg = Message::SetPower { level };
+    lifx_send(sock, target, msg).unwrap_or_else(|e| println!("Failed to set LIFX power. ({:?})", e))
+}
 fn set_hsbk(sock: &UdpSocket, target: SocketAddr, hsbk: HSBK) {
     let msg = Message::LightSetColor {
         color: hsbk,
@@ -266,6 +270,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
             saturation: 0,
         }
     });
+    let mut lifx_power = PowerLevel::Enabled; //TODO read at startup
     let mut mode = Normal;
     let mut prev_mode = Sending; // the mode we were in before the current one
     let mut held = HashSet::new(); // keys which have been pressed since they were last released
@@ -427,6 +432,13 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                                 mic_muted = !mic_muted;
                                 set_mic_mute(mic_muted);
                                 set_led(LED::Red, mic_muted);
+                            }
+                            (KEY_L, Pressed) => {
+                                lifx_power = match lifx_power {
+                                    PowerLevel::Enabled => PowerLevel::Standby,
+                                    PowerLevel::Standby => PowerLevel::Enabled,
+                                };
+                                set_lifx_power(&lifx_sock, lifx_target, lifx_power);
                             }
                             //TODO this ought to be drier, somehow
                             (KEY_LEFT, _) => {
