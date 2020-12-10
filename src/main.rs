@@ -53,13 +53,14 @@ features
 struct Opts {
     #[clap(short = 'd', long = "debug")]
     debug: bool, // print various extra data
+    #[clap(long = "lifx-ip")]
+    lifx_ip: IpAddr, //TODO scan for this at startup
     #[clap(long = "no-gpio")]
     no_gpio: bool, // for when LEDs aren't plugged in
 }
 
 // useful constants
 const EVDEV_DIR: &str = "/dev/input/";
-const LIFX_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 0, 90)); //TODO scan for this at startup
 const LIFX_PORT: u16 = 56700;
 const KEY_SEND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 236)); //TODO set from CLI
 const KEY_SEND_PORT: u16 = 56702; // TODO ditto
@@ -250,7 +251,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
     lifx_sock
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
-    let lifx_target: SocketAddr = SocketAddr::new(LIFX_IP, LIFX_PORT);
+    let lifx_target: SocketAddr = SocketAddr::new(opts.lifx_ip, LIFX_PORT);
 
     // initialise state
     let mut hsbk = get_hsbk(&lifx_sock, lifx_target).unwrap_or_else(|e| {
