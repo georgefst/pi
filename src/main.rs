@@ -6,6 +6,7 @@ use inotify::{EventMask, Inotify, WatchMask};
 use lifx_core::Message;
 use lifx_core::RawMessage;
 use lifx_core::HSBK;
+use lifx_core::{Message, PowerLevel};
 use std::iter::Iterator;
 use std::net::*;
 use std::path::PathBuf;
