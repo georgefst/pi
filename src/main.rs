@@ -535,7 +535,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                                         min
                                     } else {
                                         std::cmp::min(
-                                            hsbk.kelvin + (if shift { 260 } else { 65 }),
+                                            hsbk.kelvin + (if shift { 200 } else { 50 }),
                                             min,
                                         )
                                     },
@@ -550,7 +550,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                                         min
                                     } else {
                                         std::cmp::max(
-                                            hsbk.kelvin - (if shift { 260 } else { 65 }),
+                                            hsbk.kelvin - (if shift { 200 } else { 50 }),
                                             min,
                                         )
                                     },
