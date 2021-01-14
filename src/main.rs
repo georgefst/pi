@@ -62,7 +62,7 @@ struct Opts {
 // useful constants
 const EVDEV_DIR: &str = "/dev/input/";
 const LIFX_PORT: u16 = 56700;
-const KEY_SEND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 236)); //TODO set from CLI
+const KEY_SEND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 68, 120)); //TODO set from CLI
 const KEY_SEND_PORT: u16 = 56702; // TODO ditto
 const RETRY_PAUSE_MS: u64 = 100;
 const RETRY_MAX: i32 = 30;
