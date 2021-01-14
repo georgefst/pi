@@ -366,6 +366,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                     KEY_SPACE => Some(Normal),
                     KEY_T => Some(TV),
                     KEY_COMMA => Some(Sending),
+                    KEY_Q => Some(Quiet),
                     KEY_RIGHTALT => Some(prev_mode), // this is a bit special - nothing else was pressed
                     _ => {
                         println!("Key does not correspond to a mode: {:?}", last_key);
