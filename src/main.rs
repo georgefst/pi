@@ -329,7 +329,9 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
         set_led(x, false)
     }
     sleep(Duration::from_millis(400));
-    set_led(mode.led(), true);
+    for l in mode.led() {
+        set_led(l, true);
+    }
     set_led(LED::Red, mic_muted);
 
     loop {
@@ -380,14 +382,19 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                         xinput(XInput::Enable, opts.debug)
                     };
                     println!("Entering mode: {:?}", new_mode);
-                    set_led(prev_mode.led(), false);
-                    set_led(new_mode.led(), true);
+                    for l in prev_mode.led() {
+                        set_led(l, false)
+                    }
+                    for l in new_mode.led() {
+                        set_led(l, true)
+                    }
                 }
             } else if held.contains(&KEY_RIGHTALT) {
                 // just wait for everything to be released
             } else {
                 match mode {
                     Idle => (),
+                    Quiet => (),
                     Sending => {
                         if opts.debug {
                             println!("Sending: {:?}, {:?}", k, ev_type);
@@ -698,14 +705,16 @@ enum Mode {
     Sending, // send keypresses over UDP
     Normal,
     TV,
+    Quiet, // just turn off LEDs
 }
 impl Mode {
-    fn led(self) -> LED {
+    fn led(self) -> Vec<LED> {
         match self {
-            Idle => LED::White,
-            Sending => LED::Yellow,
-            Normal => LED::Blue,
-            TV => LED::Green,
+            Idle => vec![LED::White],
+            Sending => vec![LED::Yellow],
+            Normal => vec![LED::Blue],
+            TV => vec![LED::Green],
+            Quiet => vec![],
         }
     }
 }
