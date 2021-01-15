@@ -1,6 +1,7 @@
 use clap::{self, Clap};
 use evdev_rs::enums::{EventCode, EventType, EV_KEY::*};
 use evdev_rs::*;
+use get_if_addrs::{get_if_addrs, IfAddr, Ifv4Addr};
 use gpio::{sysfs::SysFsGpioOutput, GpioOut};
 use inotify::{EventMask, Inotify, WatchMask};
 use lifx_core::RawMessage;
@@ -53,8 +54,6 @@ features
 struct Opts {
     #[clap(short = 'd', long = "debug")]
     debug: bool, // print various extra data
-    #[clap(long = "lifx-ip")]
-    lifx_ip: IpAddr, //TODO scan for this at startup
     #[clap(long = "no-gpio")]
     no_gpio: bool, // for when LEDs aren't plugged in
 }
@@ -62,6 +61,7 @@ struct Opts {
 // useful constants
 const EVDEV_DIR: &str = "/dev/input/";
 const LIFX_PORT: u16 = 56700;
+const LIFX_TIMEOUT: Duration = Duration::from_secs(2);
 const KEY_SEND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 68, 120)); //TODO set from CLI
 const KEY_SEND_PORT: u16 = 56702; // TODO ditto
 const RETRY_PAUSE_MS: u64 = 100;
@@ -242,6 +242,59 @@ fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Err
         )))
     }
 }
+// adapted from 'https://github.com/eminence/lifx/blob/master/utils/get_all_info/src/main.rs'
+fn get_lifx_addresses() -> HashSet<SocketAddr> {
+    fn get_ip() -> IpAddr {
+        for iface in get_if_addrs().unwrap() {
+            match iface.addr {
+                IfAddr::V4(Ifv4Addr {
+                    broadcast: Some(bcast),
+                    ..
+                }) => {
+                    if iface.ip().is_loopback() {
+                        continue;
+                    }
+                    return IpAddr::V4(bcast);
+                }
+                _ => (),
+            }
+        }
+        panic!("Couldn't get ip")
+    }
+
+    let sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
+    sock.set_broadcast(true).unwrap();
+    let addr = SocketAddr::new(get_ip(), LIFX_PORT);
+    lifx_send(&sock, addr, Message::GetService).unwrap();
+
+    sock.set_read_timeout(Some(LIFX_TIMEOUT)).unwrap();
+    let mut devs = HashSet::new();
+    let mut buf = [0; 1024];
+    loop {
+        match sock.recv_from(&mut buf) {
+            Ok((n_bytes, addr)) => {
+                let raw = RawMessage::unpack(&buf[0..n_bytes]).unwrap();
+                match Message::from_raw(&raw) {
+                    Ok(m) => match m {
+                        Message::StateService {
+                            port: _,
+                            service: _,
+                        } => {
+                            println!("Found LIFX device: {}", addr);
+                            devs.insert(addr);
+                        }
+                        _ => println!("Unexpected LIFX message: {:?}", m),
+                    },
+                    Err(e) => println!("Couldn't parse LIFX message: {:?}", e),
+                }
+            }
+            Err(e) => match e.kind() {
+                io::ErrorKind::WouldBlock => return devs, // due to 'set_read_timeout'
+                _ => panic!("LIFX socket error: {:?}", e),
+            },
+        }
+    }
+}
 
 // read from 'rx', responding to events
 fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
@@ -251,13 +304,11 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
     let key_send_sock = &UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0))).unwrap();
 
     // set up LIFX
+    let lifx_devs = get_lifx_addresses();
+    let mut lifx_devs = lifx_devs.iter().cycle();
+    let mut lifx_target = lifx_devs.next().unwrap().clone();
     let lifx_sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
-    lifx_sock
-        .set_read_timeout(Some(Duration::from_secs(3)))
-        .unwrap();
-    let lifx_target: SocketAddr = SocketAddr::new(opts.lifx_ip, LIFX_PORT);
-
-    // initialise state
+    lifx_sock.set_read_timeout(Some(LIFX_TIMEOUT)).unwrap();
     let mut hsbk = get_hsbk(&lifx_sock, lifx_target).unwrap_or_else(|e| {
         //TODO run this each time we change color (but not on 'Repeated')
         // ditto power
@@ -273,6 +324,8 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
         }
     });
     let mut lifx_power = PowerLevel::Enabled;
+
+    // initialise state
     let mut mode = Normal;
     let mut prev_mode = Sending; // the mode we were in before the current one
     let mut held = HashSet::new(); // keys which have been pressed since they were last released
@@ -428,6 +481,10 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                                 stereo_once("KEY_POWER");
                                 sleep(Duration::from_secs(1));
                                 stereo_once("KEY_TAPE");
+                            }
+                            (KEY_S, Pressed) => {
+                                lifx_target = lifx_devs.next().unwrap().clone();
+                                println!("Switched LIFX device to: {}", lifx_target);
                             }
                             (KEY_VOLUMEUP, _) => stereo("KEY_VOLUMEUP"),
                             (KEY_VOLUMEDOWN, _) => stereo("KEY_VOLUMEDOWN"),
