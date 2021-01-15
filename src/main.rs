@@ -308,7 +308,10 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
     // set up LIFX
     let lifx_devs = get_lifx_addresses();
     let mut lifx_devs = lifx_devs.iter().cycle();
-    let mut lifx_target = lifx_devs.next().unwrap().clone();
+    let mut lifx_target = lifx_devs
+        .next()
+        .unwrap_or_else(|| panic!("No LIFX devices found"))
+        .clone();
     let lifx_sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
     lifx_sock.set_read_timeout(Some(LIFX_TIMEOUT)).unwrap();
     let mut hsbk = get_hsbk(&lifx_sock, lifx_target).unwrap_or_else(|e| {
