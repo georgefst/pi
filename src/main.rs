@@ -326,7 +326,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
     let mut lifx_power = PowerLevel::Enabled;
 
     // initialise state
-    let mut mode = Normal;
+    let mut mode = Idle;
     let mut prev_mode = Sending; // the mode we were in before the current one
     let mut held = HashSet::new(); // keys which have been pressed since they were last released
     let mut last_key = KEY_RESERVED; // will be updated before it's ever read
