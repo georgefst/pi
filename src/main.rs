@@ -163,7 +163,11 @@ fn read_dev(tx: Sender<InputEvent>, path: PathBuf, debug: bool) {
                 }
             }
             Err(e) => {
-                println!("Not an evdev device: {} ({:?})", path.to_str().unwrap(), e);
+                println!(
+                    "Failed to create evdev device: {}: {}",
+                    path.to_str().unwrap(),
+                    e
+                );
             }
         }
     });
