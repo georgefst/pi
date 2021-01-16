@@ -70,7 +70,6 @@ const RETRY_MAX: i32 = 30;
 fn main() {
     // get data from command line args
     let opts: Opts = Opts::parse();
-    let debug = opts.debug;
 
     // set up channel for keyboard events
     let (tx, rx) = channel();
@@ -80,7 +79,7 @@ fn main() {
         let path = dir_entry.unwrap().path();
         if !path.is_dir() {
             println!("Found device: {}", path.to_str().unwrap());
-            read_dev(tx.clone(), path, debug);
+            read_dev(tx.clone(), path);
         }
     }
 
@@ -98,7 +97,7 @@ fn main() {
                         let path = name.to_str().unwrap();
                         println!("Found new device: {}", path);
                         let full_path = PathBuf::from(EVDEV_DIR).join(path);
-                        read_dev(tx1.clone(), full_path, debug);
+                        read_dev(tx1.clone(), full_path);
                     }
                 }
             }
@@ -110,7 +109,7 @@ fn main() {
 
 // create a new thread to read events from the device at p, and send them on s
 // if the device doesn't have key events (eg. a mouse), it is ignored
-fn read_dev(tx: Sender<InputEvent>, path: PathBuf, debug: bool) {
+fn read_dev(tx: Sender<InputEvent>, path: PathBuf) {
     thread::spawn(move || {
         // keep retrying on permission error - else we get failures on startup and with new devices
         //TODO cf. my Haskell evdev lib for more principled solution
