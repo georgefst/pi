@@ -144,7 +144,6 @@ fn read_dev(tx: Sender<InputEvent>, path: PathBuf, debug: bool) {
             Ok(dev) => {
                 if dev.has_event_type(&EventType::EV_KEY) {
                     //TODO xinput disable (just for this device) (not when currently in 'Idle' mode)
-                    xinput(XInput::Disable, debug);
                     loop {
                         match dev.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING) {
                             Ok((_, event)) => tx.send(event).unwrap(),
