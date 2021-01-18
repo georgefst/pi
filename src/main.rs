@@ -228,14 +228,17 @@ fn set_hsbk(sock: &UdpSocket, target: SocketAddr, hsbk: HSBK) {
     };
     lifx_send(sock, target, msg).unwrap_or_else(|e| println!("Failed to set HSBK. ({:?})", e))
 }
-fn get_hsbk(sock: &UdpSocket, target: SocketAddr) -> Result<HSBK, lifx_core::Error> {
+fn get_lifx_state(
+    sock: &UdpSocket,
+    target: SocketAddr,
+) -> Result<(PowerLevel, HSBK), lifx_core::Error> {
     let mut buf = [0; 88];
     lifx_send(sock, target, Message::LightGet)?;
     let (_n_bytes, _addr) = sock.recv_from(&mut buf)?;
     let raw = RawMessage::unpack(&buf)?;
     let msg = Message::from_raw(&raw)?;
-    if let Message::LightState { color: hsbk, .. } = msg {
-        Ok(hsbk)
+    if let Message::LightState { power, color, .. } = msg {
+        Ok((power, color))
     } else {
         Err(lifx_core::Error::ProtocolError(String::from(
             "failed to decode light response",
@@ -312,21 +315,24 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
         .clone();
     let lifx_sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
     lifx_sock.set_read_timeout(Some(LIFX_TIMEOUT)).unwrap();
-    let mut hsbk = get_hsbk(&lifx_sock, lifx_target).unwrap_or_else(|e| {
+    let (lifx_power, hsbk) = get_lifx_state(&lifx_sock, lifx_target).unwrap_or_else(|e| {
         //TODO run this each time we change color (but not on 'Repeated')
-        // ditto power
         println!(
-            "Failed to get HSBK from light - initialising all fields to 0. ({:?})",
+            "Failed to get state from light - initialising all fields to 0. ({:?})",
             e
         );
-        HSBK {
-            brightness: 0,
-            hue: 0,
-            kelvin: 0,
-            saturation: 0,
-        }
+        (
+            PowerLevel::Standby,
+            HSBK {
+                brightness: 0,
+                hue: 0,
+                kelvin: 0,
+                saturation: 0,
+            },
+        )
     });
-    let mut lifx_power = PowerLevel::Enabled;
+    let mut hsbk = hsbk;
+    let mut lifx_power = lifx_power;
 
     // initialise state
     let mut mode = Idle;
