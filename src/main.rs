@@ -4,9 +4,7 @@ use evdev_rs::*;
 use get_if_addrs::{get_if_addrs, IfAddr, Ifv4Addr};
 use gpio::{sysfs::SysFsGpioOutput, GpioOut};
 use inotify::{EventMask, Inotify, WatchMask};
-use lifx_core::RawMessage;
-use lifx_core::HSBK;
-use lifx_core::{Message, PowerLevel};
+use lifx_core::{LifxString, Message, PowerLevel, RawMessage, HSBK};
 use std::iter::Iterator;
 use std::net::*;
 use std::path::PathBuf;
@@ -231,14 +229,20 @@ fn set_hsbk(sock: &UdpSocket, target: SocketAddr, hsbk: HSBK) {
 fn get_lifx_state(
     sock: &UdpSocket,
     target: SocketAddr,
-) -> Result<(PowerLevel, HSBK), lifx_core::Error> {
+) -> Result<(LifxString, PowerLevel, HSBK), lifx_core::Error> {
     let mut buf = [0; 88];
     lifx_send(sock, target, Message::LightGet)?;
     let (_n_bytes, _addr) = sock.recv_from(&mut buf)?;
     let raw = RawMessage::unpack(&buf)?;
     let msg = Message::from_raw(&raw)?;
-    if let Message::LightState { power, color, .. } = msg {
-        Ok((power, color))
+    if let Message::LightState {
+        label,
+        power,
+        color,
+        ..
+    } = msg
+    {
+        Ok((label, power, color))
     } else {
         Err(lifx_core::Error::ProtocolError(String::from(
             "failed to decode light response",
@@ -315,22 +319,24 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
         .clone();
     let lifx_sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
     lifx_sock.set_read_timeout(Some(LIFX_TIMEOUT)).unwrap();
-    let (lifx_power, hsbk) = get_lifx_state(&lifx_sock, lifx_target).unwrap_or_else(|e| {
-        //TODO run this each time we change color (but not on 'Repeated')
-        println!(
-            "Failed to get state from light - initialising all fields to 0. ({:?})",
-            e
-        );
-        (
-            PowerLevel::Standby,
-            HSBK {
-                brightness: 0,
-                hue: 0,
-                kelvin: 0,
-                saturation: 0,
-            },
-        )
-    });
+    let (lifx_power, hsbk) = get_lifx_state(&lifx_sock, lifx_target)
+        .map(|(_, x, y)| (x, y))
+        .unwrap_or_else(|e| {
+            //TODO run this each time we change color (but not on 'Repeated')
+            println!(
+                "Failed to get state from light - initialising all fields to 0. ({:?})",
+                e
+            );
+            (
+                PowerLevel::Standby,
+                HSBK {
+                    brightness: 0,
+                    hue: 0,
+                    kelvin: 0,
+                    saturation: 0,
+                },
+            )
+        });
     let mut hsbk = hsbk;
     let mut lifx_power = lifx_power;
 
@@ -493,7 +499,15 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                             }
                             (KEY_S, Pressed) => {
                                 lifx_target = lifx_devs.next().unwrap().clone();
-                                println!("Switched LIFX device to: {}", lifx_target);
+                                let r = get_lifx_state(&lifx_sock, lifx_target);
+                                println!(
+                                    "Changing active LIFX device to {}:\n  {:?}",
+                                    lifx_target, r
+                                );
+                                if let Ok((_, p, h)) = r {
+                                    hsbk = h;
+                                    lifx_power = p;
+                                }
                             }
                             (KEY_VOLUMEUP, _) => stereo("KEY_VOLUMEUP"),
                             (KEY_VOLUMEDOWN, _) => stereo("KEY_VOLUMEDOWN"),
