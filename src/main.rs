@@ -503,7 +503,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                             (KEY_NEXTSONG, Pressed) => mpris("Next", opts.debug),
                             (KEY_M, Pressed) => {
                                 //TODO we mostly use this when watching TV
-                                // would be preferable to just disable Mycroft whenever sound is being output be
+                                // would be preferable to just disable Mycroft whenever sound is being output by
                                 // any other application
                                 mic_muted = !mic_muted;
                                 set_mic_mute(mic_muted);
