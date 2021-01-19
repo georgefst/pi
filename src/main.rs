@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::result::*;
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
@@ -28,7 +29,7 @@ use Mode::*;
 
 maintainability
     once I actually understand the borrow checker
-        tx, tx1...
+        tx, tx1, mode, mode1...
         read_dev itself shouldnt be responsible for spawning the thread
         review all uses of 'clone', 'move', '&' etc.
         have 'handle_cmd' actually take a Command
@@ -68,16 +69,20 @@ const RETRY_MAX: i32 = 30;
 fn main() {
     // get data from command line args
     let opts: Opts = Opts::parse();
+    let debug = opts.debug;
 
     // set up channel for keyboard events
     let (tx, rx) = channel();
+
+    let mode = Arc::new(Mutex::new(Idle));
+    let mode1 = Arc::clone(&mode);
 
     // read from existing devices
     for dir_entry in read_dir(&EVDEV_DIR).unwrap() {
         let path = dir_entry.unwrap().path();
         if !path.is_dir() {
             println!("Found device: {}", path.to_str().unwrap());
-            read_dev(tx.clone(), path);
+            read_dev(Arc::clone(&mode), tx.clone(), path, debug);
         }
     }
 
@@ -95,19 +100,19 @@ fn main() {
                         let path = name.to_str().unwrap();
                         println!("Found new device: {}", path);
                         let full_path = PathBuf::from(EVDEV_DIR).join(path);
-                        read_dev(tx1.clone(), full_path);
+                        read_dev(Arc::clone(&mode), tx1.clone(), full_path, debug);
                     }
                 }
             }
         }
     });
 
-    respond_to_events(rx, opts);
+    respond_to_events(mode1, rx, opts);
 }
 
 // create a new thread to read events from the device at p, and send them on s
 // if the device doesn't have key events (eg. a mouse), it is ignored
-fn read_dev(tx: Sender<InputEvent>, path: PathBuf) {
+fn read_dev(mode: Arc<Mutex<Mode>>, tx: Sender<InputEvent>, path: PathBuf, debug: bool) {
     thread::spawn(move || {
         // keep retrying on permission error - else we get failures on startup and with new devices
         //TODO cf. my Haskell evdev lib for more principled solution
@@ -140,7 +145,14 @@ fn read_dev(tx: Sender<InputEvent>, path: PathBuf) {
         match Device::new_from_fd(file) {
             Ok(dev) => {
                 if dev.has_event_type(&EventType::EV_KEY) {
-                    //TODO xinput disable (just for this device) (not when currently in 'Idle' mode)
+                    let mode = *mode.lock().unwrap();
+                    if debug {
+                        println!("New device, current mode {:?}", mode)
+                    }
+                    if mode != Idle {
+                        //TODO run just for this device
+                        xinput(XInput::Disable, debug);
+                    }
                     loop {
                         match dev.next_event(ReadFlag::NORMAL | ReadFlag::BLOCKING) {
                             Ok((_, event)) => tx.send(event).unwrap(),
@@ -304,7 +316,7 @@ fn get_lifx_addresses() -> HashSet<SocketAddr> {
 }
 
 // read from 'rx', responding to events
-fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
+fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opts) {
     // set up evdev-share
     let mut key_send_buf = [0; 2];
     let key_send_addr = SocketAddr::new(KEY_SEND_IP, KEY_SEND_PORT);
@@ -341,7 +353,6 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
     let mut lifx_power = lifx_power;
 
     // initialise state
-    let mut mode = Idle;
     let mut prev_mode = Normal; // the mode we were in before the current one
     let mut held = HashSet::new(); // keys which have been pressed since they were last released
     let mut last_key = KEY_RESERVED; // will be updated before it's ever read
@@ -397,7 +408,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
         set_led(x, false)
     }
     sleep(Duration::from_millis(400));
-    for l in mode.led() {
+    for l in mode.lock().unwrap().led() {
         set_led(l, true);
     }
     set_led(LED::Red, mic_muted);
@@ -442,8 +453,9 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
                     }
                 };
                 if let Some(new_mode) = new_mode {
-                    prev_mode = mode;
-                    mode = new_mode;
+                    let mut mode = mode.lock().unwrap();
+                    prev_mode = *mode;
+                    *mode = new_mode;
                     if prev_mode == Idle {
                         xinput(XInput::Disable, opts.debug)
                     };
@@ -461,7 +473,7 @@ fn respond_to_events(rx: Receiver<InputEvent>, opts: Opts) {
             } else if held.contains(&KEY_RIGHTALT) {
                 // just wait for everything to be released
             } else {
-                match mode {
+                match *mode.lock().unwrap() {
                     Idle => (),
                     Quiet => (),
                     Sending => {
