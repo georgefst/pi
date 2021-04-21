@@ -524,7 +524,14 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             (KEY_VOLUMEUP, _) => stereo("KEY_VOLUMEUP"),
                             (KEY_VOLUMEDOWN, _) => stereo("KEY_VOLUMEDOWN"),
                             (KEY_MUTE, Pressed) => stereo_once("muting"),
-                            (KEY_PLAYPAUSE, Pressed) => mpris("PlayPause", opts.debug),
+                            (KEY_PLAYPAUSE, Pressed) => {
+                                if ctrl {
+                                    // TODO remove when spotifyd goes back to handling PlayPause properly
+                                    mpris("Pause", opts.debug)
+                                } else {
+                                    mpris("PlayPause", opts.debug)
+                                }
+                            }
                             (KEY_PREVIOUSSONG, Pressed) => mpris("Previous", opts.debug),
                             (KEY_NEXTSONG, Pressed) => mpris("Next", opts.debug),
                             (KEY_M, Pressed) => {
