@@ -153,7 +153,7 @@ fn read_dev(mode: Arc<Mutex<Mode>>, tx: Sender<InputEvent>, path: PathBuf, debug
                         println!("New device, current mode {:?}", mode)
                     }
                     if mode != Idle {
-                        //TODO run just for this device
+                        //TODO run just for this device - difficult with my bluetooth keyboard since it appears as multiple?
                         xinput(XInput::Disable, debug);
                     }
                     loop {
@@ -338,9 +338,9 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
     let lifx_sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
     lifx_sock.set_read_timeout(Some(LIFX_TIMEOUT)).unwrap();
     let (lifx_power, hsbk) = get_lifx_state(&lifx_sock, lifx_target)
+        //TODO run this each time we change color (but not on 'Repeated')
         .map(|(_, x, y)| (x, y))
         .unwrap_or_else(|e| {
-            //TODO run this each time we change color (but not on 'Repeated')
             println!(
                 "Failed to get state from light - initialising all fields to 0. ({:?})",
                 e
