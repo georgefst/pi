@@ -65,6 +65,7 @@ struct Opts {
 const EVDEV_DIR: &str = "/dev/input/";
 const LIFX_PORT: u16 = 56700;
 const LIFX_TIMEOUT: Duration = Duration::from_secs(4);
+const LIFX_FLASH_TIME: Duration = Duration::from_millis(250);
 const RETRY_PAUSE_MS: u64 = 100;
 const RETRY_MAX: i32 = 30;
 
@@ -232,13 +233,16 @@ fn set_lifx_power(sock: &UdpSocket, target: SocketAddr, level: PowerLevel) {
     let msg = Message::SetPower { level };
     lifx_send(sock, target, msg).unwrap_or_else(|e| println!("Failed to set LIFX power. ({:?})", e))
 }
-fn set_hsbk(sock: &UdpSocket, target: SocketAddr, hsbk: HSBK) {
+fn set_hsbk_delayed(sock: &UdpSocket, target: SocketAddr, hsbk: HSBK, dur: Duration) {
     let msg = Message::LightSetColor {
         color: hsbk,
-        duration: 0,
+        duration: dur.as_millis() as u32,
         reserved: 0,
     };
     lifx_send(sock, target, msg).unwrap_or_else(|e| println!("Failed to set HSBK. ({:?})", e))
+}
+fn set_hsbk(sock: &UdpSocket, target: SocketAddr, hsbk: HSBK) {
+    set_hsbk_delayed(sock, target, hsbk, Duration::from_secs(0))
 }
 fn get_lifx_state(
     sock: &UdpSocket,
@@ -521,6 +525,25 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                 if let Ok((_, p, h)) = r {
                                     hsbk = h;
                                     lifx_power = p;
+
+                                    // flash to half brightness
+                                    set_hsbk_delayed(
+                                        &lifx_sock,
+                                        lifx_target,
+                                        HSBK {
+                                            brightness: hsbk.brightness / 2,
+                                            ..hsbk
+                                        },
+                                        LIFX_FLASH_TIME,
+                                    );
+                                    // TODO does the bulb queue messages? if so this is unnecessary, if not it's a race condition
+                                    sleep(LIFX_FLASH_TIME);
+                                    set_hsbk_delayed(
+                                        &lifx_sock,
+                                        lifx_target,
+                                        hsbk,
+                                        LIFX_FLASH_TIME,
+                                    );
                                 }
                             }
                             (KEY_VOLUMEUP, _) => stereo("KEY_VOLUMEUP"),
