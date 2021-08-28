@@ -653,7 +653,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                 set_hsbk(&lifx_sock, lifx_target, hsbk);
                             }
                             (KEY_RIGHTBRACE, _) => {
-                                let min = 2500;
+                                let min = 1500;
                                 hsbk = HSBK {
                                     kelvin: if ctrl {
                                         min
