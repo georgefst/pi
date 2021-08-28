@@ -55,14 +55,16 @@ struct Opts {
     debug: bool, // print various extra data
     #[clap(long = "no-gpio")]
     no_gpio: bool, // for when LEDs aren't plugged in
+    #[clap(long = "ip")]
+    key_send_ip: IpAddr,
+    #[clap(long = "port")]
+    key_send_port: u16,
 }
 
 // useful constants
 const EVDEV_DIR: &str = "/dev/input/";
 const LIFX_PORT: u16 = 56700;
 const LIFX_TIMEOUT: Duration = Duration::from_secs(4);
-const KEY_SEND_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 130)); //TODO set from CLI
-const KEY_SEND_PORT: u16 = 56702; // TODO ditto
 const RETRY_PAUSE_MS: u64 = 100;
 const RETRY_MAX: i32 = 30;
 
@@ -319,7 +321,7 @@ fn get_lifx_addresses() -> HashSet<SocketAddr> {
 fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opts) {
     // set up evdev-share
     let mut key_send_buf = [0; 2];
-    let key_send_addr = SocketAddr::new(KEY_SEND_IP, KEY_SEND_PORT);
+    let key_send_addr = SocketAddr::new(opts.key_send_ip, opts.key_send_port);
     let key_send_sock = &UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0))).unwrap();
 
     // set up LIFX
