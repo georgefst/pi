@@ -449,7 +449,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
             if k == KEY_RIGHTALT && ev_type == Released && held.is_empty() {
                 let new_mode = match last_key {
                     KEY_ESC => Some(Idle),
-                    KEY_SPACE => Some(Normal),
+                    KEY_DOT => Some(Normal),
                     KEY_T => Some(TV),
                     KEY_COMMA => Some(Sending),
                     KEY_Q => Some(Quiet),
