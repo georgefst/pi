@@ -65,7 +65,7 @@ struct Opts {
 const EVDEV_DIR: &str = "/dev/input/";
 const LIFX_PORT: u16 = 56700;
 const LIFX_TIMEOUT: Duration = Duration::from_secs(4);
-const LIFX_FLASH_TIME: Duration = Duration::from_millis(250);
+const LIFX_FLASH_TIME: Duration = Duration::from_millis(350);
 const RETRY_PAUSE_MS: u64 = 100;
 const RETRY_MAX: i32 = 30;
 
