@@ -250,21 +250,22 @@ fn get_lifx_state(
 ) -> Result<(LifxString, PowerLevel, HSBK), lifx_core::Error> {
     let mut buf = [0; 88];
     lifx_send(sock, target, Message::LightGet)?;
-    let (_n_bytes, _addr) = sock.recv_from(&mut buf)?;
-    let raw = RawMessage::unpack(&buf)?;
-    let msg = Message::from_raw(&raw)?;
-    if let Message::LightState {
-        label,
-        power,
-        color,
-        ..
-    } = msg
-    {
-        Ok((label, power, color))
-    } else {
-        Err(lifx_core::Error::ProtocolError(String::from(
-            "failed to decode light response",
-        )))
+    sock.set_read_timeout(Some(LIFX_TIMEOUT)).unwrap();
+    loop {
+        let (_n_bytes, _addr) = sock.recv_from(&mut buf)?;
+        let raw = RawMessage::unpack(&buf)?;
+        let msg = Message::from_raw(&raw)?;
+        if let Message::LightState {
+            label,
+            power,
+            color,
+            ..
+        } = msg
+        {
+            return Ok((label, power, color));
+        } else {
+            println!("Unexpected LIFX message: {:?}", msg);
+        }
     }
 }
 // adapted from 'https://github.com/eminence/lifx/blob/master/utils/get_all_info/src/main.rs'
