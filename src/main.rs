@@ -662,21 +662,6 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                 set_hsbk(&lifx_sock, lifx_target, hsbk);
                             }
                             (KEY_LEFTBRACE, _) => {
-                                let max = 9000;
-                                hsbk = HSBK {
-                                    kelvin: if ctrl {
-                                        max
-                                    } else {
-                                        std::cmp::min(
-                                            hsbk.kelvin + (if shift { 200 } else { 50 }),
-                                            max,
-                                        )
-                                    },
-                                    ..hsbk
-                                };
-                                set_hsbk(&lifx_sock, lifx_target, hsbk);
-                            }
-                            (KEY_RIGHTBRACE, _) => {
                                 let min = 1500;
                                 hsbk = HSBK {
                                     kelvin: if ctrl {
@@ -685,6 +670,21 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                         std::cmp::max(
                                             hsbk.kelvin - (if shift { 200 } else { 50 }),
                                             min,
+                                        )
+                                    },
+                                    ..hsbk
+                                };
+                                set_hsbk(&lifx_sock, lifx_target, hsbk);
+                            }
+                            (KEY_RIGHTBRACE, _) => {
+                                let max = 9000;
+                                hsbk = HSBK {
+                                    kelvin: if ctrl {
+                                        max
+                                    } else {
+                                        std::cmp::min(
+                                            hsbk.kelvin + (if shift { 200 } else { 50 }),
+                                            max,
                                         )
                                     },
                                     ..hsbk
