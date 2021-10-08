@@ -662,14 +662,14 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                 set_hsbk(&lifx_sock, lifx_target, hsbk);
                             }
                             (KEY_LEFTBRACE, _) => {
-                                let min = 9000;
+                                let max = 9000;
                                 hsbk = HSBK {
                                     kelvin: if ctrl {
-                                        min
+                                        max
                                     } else {
                                         std::cmp::min(
                                             hsbk.kelvin + (if shift { 200 } else { 50 }),
-                                            min,
+                                            max,
                                         )
                                     },
                                     ..hsbk
