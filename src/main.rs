@@ -338,26 +338,22 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
         .clone();
     let lifx_sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
     lifx_sock.set_read_timeout(Some(LIFX_TIMEOUT)).unwrap();
-    let (lifx_power, hsbk) = get_lifx_state(&lifx_sock, lifx_target)
+    let hsbk = get_lifx_state(&lifx_sock, lifx_target)
         //TODO run this each time we change color (but not on 'Repeated')
-        .map(|(_, x, y)| (x, y))
+        .map(|x| x.2)
         .unwrap_or_else(|e| {
             println!(
                 "Failed to get state from light - initialising all fields to 0. ({:?})",
                 e
             );
-            (
-                PowerLevel::Standby,
-                HSBK {
-                    brightness: 0,
-                    hue: 0,
-                    kelvin: 0,
-                    saturation: 0,
-                },
-            )
+            HSBK {
+                brightness: 0,
+                hue: 0,
+                kelvin: 0,
+                saturation: 0,
+            }
         });
     let mut hsbk = hsbk;
-    let mut lifx_power = lifx_power;
 
     // initialise state
     let mut prev_mode = Normal; // the mode we were in before the current one
@@ -523,9 +519,8 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                     "Changing active LIFX device to {}:\n  {:?}",
                                     lifx_target, r
                                 );
-                                if let Ok((_, p, h)) = r {
+                                if let Ok((_, _, h)) = r {
                                     hsbk = h;
-                                    lifx_power = p;
 
                                     // flash to half brightness
                                     set_hsbk_delayed(
@@ -568,13 +563,16 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                 set_mic_mute(mic_muted);
                                 set_led(LED::Red, mic_muted);
                             }
-                            (KEY_L, Pressed) => {
-                                lifx_power = match lifx_power {
-                                    PowerLevel::Enabled => PowerLevel::Standby,
-                                    PowerLevel::Standby => PowerLevel::Enabled,
-                                };
-                                set_lifx_power(&lifx_sock, lifx_target, lifx_power);
-                            }
+                            (KEY_L, Pressed) => match get_lifx_state(&lifx_sock, lifx_target) {
+                                Ok((_, power0, _)) => {
+                                    let power = match power0 {
+                                        PowerLevel::Enabled => PowerLevel::Standby,
+                                        PowerLevel::Standby => PowerLevel::Enabled,
+                                    };
+                                    set_lifx_power(&lifx_sock, lifx_target, power);
+                                }
+                                Err(e) => println!("Failed to get LIFX power: {:?}", e),
+                            },
                             //TODO this ought to be drier, somehow
                             (KEY_LEFT, _) => {
                                 let inc = 256;
