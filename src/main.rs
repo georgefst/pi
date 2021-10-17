@@ -338,22 +338,13 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
         .clone();
     let lifx_sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
     lifx_sock.set_read_timeout(Some(LIFX_TIMEOUT)).unwrap();
-    let hsbk = get_lifx_state(&lifx_sock, lifx_target)
-        //TODO run this each time we change color (but not on 'Repeated')
-        .map(|x| x.2)
-        .unwrap_or_else(|e| {
-            println!(
-                "Failed to get state from light - initialising all fields to 0. ({:?})",
-                e
-            );
-            HSBK {
-                brightness: 0,
-                hue: 0,
-                kelvin: 0,
-                saturation: 0,
-            }
-        });
-    let mut hsbk = hsbk;
+    //TODO this initial value is never actually used
+    let mut hsbk = HSBK {
+        brightness: 0,
+        hue: 0,
+        kelvin: 0,
+        saturation: 0,
+    };
 
     // initialise state
     let mut prev_mode = Normal; // the mode we were in before the current one
@@ -493,6 +484,31 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             });
                     }
                     Normal => {
+                        let mut update_lifx =
+                            |event_type: KeyEventType, inc: &dyn Fn(HSBK) -> HSBK| match event_type
+                            {
+                                Pressed => {
+                                    {
+                                        let sock = &lifx_sock;
+                                        match get_lifx_state(&sock, lifx_target) {
+                                            Ok((_, _, hsbk0)) => Some(hsbk0),
+                                            Err(e) => {
+                                                println!("Failed to get bulb state: {:?}", e);
+                                                None
+                                            }
+                                        }
+                                    }
+                                    .map(|hsbk0| {
+                                        hsbk = inc(hsbk0);
+                                        set_hsbk(&lifx_sock, lifx_target, hsbk);
+                                    });
+                                }
+                                Repeated => {
+                                    hsbk = inc(hsbk);
+                                    set_hsbk(&lifx_sock, lifx_target, hsbk);
+                                }
+                                Released => (),
+                            };
                         let stereo = |cmd: &str| ir_cmd("stereo", cmd, ev_type, opts.debug);
                         let stereo_once = |cmd: &str| ir_cmd_once("stereo", cmd, opts.debug);
                         match (&k, ev_type) {
@@ -573,122 +589,137 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                 }
                                 Err(e) => println!("Failed to get LIFX power: {:?}", e),
                             },
-                            //TODO this ought to be drier, somehow
-                            (KEY_LEFT, _) => {
-                                let inc = 256;
-                                //TODO don't trigger on 'Released' (wait for 'or patterns'?)
-                                hsbk = HSBK {
-                                    hue: if ctrl {
-                                        hsbk.hue.wrapping_sub(inc * 16)
-                                    } else if shift {
-                                        hsbk.hue.wrapping_sub(inc * 4)
-                                    } else {
-                                        hsbk.hue.wrapping_sub(inc)
-                                    },
-                                    ..hsbk
-                                };
-                                set_hsbk(&lifx_sock, lifx_target, hsbk);
-                            }
-                            (KEY_RIGHT, _) => {
-                                let inc = 256;
-                                hsbk = HSBK {
-                                    hue: if ctrl {
-                                        hsbk.hue.wrapping_add(inc * 16)
-                                    } else if shift {
-                                        hsbk.hue.wrapping_add(inc * 4)
-                                    } else {
-                                        hsbk.hue.wrapping_add(inc)
-                                    },
-                                    ..hsbk
-                                };
-                                set_hsbk(&lifx_sock, lifx_target, hsbk);
-                            }
-                            (KEY_EQUAL, _) => {
-                                let max = 65535;
-                                hsbk = HSBK {
-                                    saturation: if ctrl {
-                                        max
-                                    } else {
-                                        hsbk.saturation
-                                            .checked_add(if shift { 2048 } else { 512 })
-                                            .unwrap_or(max)
-                                    },
-                                    ..hsbk
-                                };
-                                set_hsbk(&lifx_sock, lifx_target, hsbk);
-                            }
-                            (KEY_MINUS, _) => {
-                                let min = 0;
-                                hsbk = HSBK {
-                                    saturation: if ctrl {
-                                        min
-                                    } else {
-                                        hsbk.saturation
-                                            .checked_sub(if shift { 2048 } else { 512 })
-                                            .unwrap_or(min)
-                                    },
-                                    ..hsbk
-                                };
-                                set_hsbk(&lifx_sock, lifx_target, hsbk);
-                            }
-                            (KEY_UP, _) => {
-                                let max = 65535;
-                                hsbk = HSBK {
-                                    brightness: if ctrl {
-                                        max
-                                    } else {
-                                        hsbk.brightness
-                                            .checked_add(if shift { 2048 } else { 512 })
-                                            .unwrap_or(max)
-                                    },
-                                    ..hsbk
-                                };
-                                set_hsbk(&lifx_sock, lifx_target, hsbk);
-                            }
-                            (KEY_DOWN, _) => {
-                                let min = 0;
-                                hsbk = HSBK {
-                                    brightness: if ctrl {
-                                        min
-                                    } else {
-                                        hsbk.brightness
-                                            .checked_sub(if shift { 2048 } else { 512 })
-                                            .unwrap_or(min)
-                                    },
-                                    ..hsbk
-                                };
-                                set_hsbk(&lifx_sock, lifx_target, hsbk);
-                            }
-                            (KEY_LEFTBRACE, _) => {
-                                let min = 1500;
-                                hsbk = HSBK {
-                                    kelvin: if ctrl {
-                                        min
-                                    } else {
-                                        std::cmp::max(
-                                            hsbk.kelvin - (if shift { 200 } else { 50 }),
-                                            min,
-                                        )
-                                    },
-                                    ..hsbk
-                                };
-                                set_hsbk(&lifx_sock, lifx_target, hsbk);
-                            }
-                            (KEY_RIGHTBRACE, _) => {
-                                let max = 9000;
-                                hsbk = HSBK {
-                                    kelvin: if ctrl {
-                                        max
-                                    } else {
-                                        std::cmp::min(
-                                            hsbk.kelvin + (if shift { 200 } else { 50 }),
-                                            max,
-                                        )
-                                    },
-                                    ..hsbk
-                                };
-                                set_hsbk(&lifx_sock, lifx_target, hsbk);
-                            }
+                            //TODO this feels like it could be drier, somehow
+                            (KEY_LEFT, event_type) => update_lifx(
+                                event_type,
+                                &(|hsbk: HSBK| {
+                                    let inc = 256;
+                                    HSBK {
+                                        hue: if ctrl {
+                                            hsbk.hue.wrapping_sub(inc * 16)
+                                        } else if shift {
+                                            hsbk.hue.wrapping_sub(inc * 4)
+                                        } else {
+                                            hsbk.hue.wrapping_sub(inc)
+                                        },
+                                        ..hsbk
+                                    }
+                                }),
+                            ),
+                            (KEY_RIGHT, event_type) => update_lifx(
+                                event_type,
+                                &(|hsbk: HSBK| {
+                                    let inc = 256;
+                                    HSBK {
+                                        hue: if ctrl {
+                                            hsbk.hue.wrapping_add(inc * 16)
+                                        } else if shift {
+                                            hsbk.hue.wrapping_add(inc * 4)
+                                        } else {
+                                            hsbk.hue.wrapping_add(inc)
+                                        },
+                                        ..hsbk
+                                    }
+                                }),
+                            ),
+                            (KEY_EQUAL, event_type) => update_lifx(
+                                event_type,
+                                &(|hsbk: HSBK| {
+                                    let max = 65535;
+                                    HSBK {
+                                        saturation: if ctrl {
+                                            max
+                                        } else {
+                                            hsbk.saturation
+                                                .checked_add(if shift { 2048 } else { 512 })
+                                                .unwrap_or(max)
+                                        },
+                                        ..hsbk
+                                    }
+                                }),
+                            ),
+                            (KEY_MINUS, event_type) => update_lifx(
+                                event_type,
+                                &(|hsbk: HSBK| {
+                                    let min = 0;
+                                    HSBK {
+                                        saturation: if ctrl {
+                                            min
+                                        } else {
+                                            hsbk.saturation
+                                                .checked_sub(if shift { 2048 } else { 512 })
+                                                .unwrap_or(min)
+                                        },
+                                        ..hsbk
+                                    }
+                                }),
+                            ),
+                            (KEY_UP, event_type) => update_lifx(
+                                event_type,
+                                &(|hsbk: HSBK| {
+                                    let max = 65535;
+                                    HSBK {
+                                        brightness: if ctrl {
+                                            max
+                                        } else {
+                                            hsbk.brightness
+                                                .checked_add(if shift { 2048 } else { 512 })
+                                                .unwrap_or(max)
+                                        },
+                                        ..hsbk
+                                    }
+                                }),
+                            ),
+                            (KEY_DOWN, event_type) => update_lifx(
+                                event_type,
+                                &(|hsbk: HSBK| {
+                                    let min = 0;
+                                    HSBK {
+                                        brightness: if ctrl {
+                                            min
+                                        } else {
+                                            hsbk.brightness
+                                                .checked_sub(if shift { 2048 } else { 512 })
+                                                .unwrap_or(min)
+                                        },
+                                        ..hsbk
+                                    }
+                                }),
+                            ),
+                            (KEY_LEFTBRACE, event_type) => update_lifx(
+                                event_type,
+                                &(|hsbk: HSBK| {
+                                    let min = 1500;
+                                    HSBK {
+                                        kelvin: if ctrl {
+                                            min
+                                        } else {
+                                            std::cmp::max(
+                                                hsbk.kelvin - (if shift { 200 } else { 50 }),
+                                                min,
+                                            )
+                                        },
+                                        ..hsbk
+                                    }
+                                }),
+                            ),
+                            (KEY_RIGHTBRACE, event_type) => update_lifx(
+                                event_type,
+                                &(|hsbk: HSBK| {
+                                    let max = 9000;
+                                    HSBK {
+                                        kelvin: if ctrl {
+                                            max
+                                        } else {
+                                            std::cmp::min(
+                                                hsbk.kelvin + (if shift { 200 } else { 50 }),
+                                                max,
+                                            )
+                                        },
+                                        ..hsbk
+                                    }
+                                }),
+                            ),
                             _ => (),
                         }
                     }
