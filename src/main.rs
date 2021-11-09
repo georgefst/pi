@@ -526,13 +526,16 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             }
                             (KEY_S, Pressed) => {
                                 lifx_target = lifx_devs.next().unwrap().clone();
-                                let r = get_lifx_state(&lifx_sock, lifx_target);
+                                match get_lifx_state(&lifx_sock, lifx_target) {
+                                    Err(e) => {
+                                        println!("Failed to change active LIFX device: {}", e)
+                                    }
+                                    Ok(s) => {
                                 println!(
                                     "Changing active LIFX device to {}:\n  {:?}",
-                                    lifx_target, r
+                                    lifx_target, s
                                 );
-                                if let Ok((_, _, h)) = r {
-                                    hsbk = h;
+                                    hsbk = s.2;
 
                                     // flash to half brightness
                                     set_hsbk_delayed(
@@ -552,6 +555,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                         hsbk,
                                         LIFX_FLASH_TIME,
                                     );
+                                    }
                                 }
                             }
                             (KEY_VOLUMEUP, _) => stereo("KEY_VOLUMEUP"),
