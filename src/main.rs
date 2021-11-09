@@ -331,7 +331,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
 
     // set up LIFX
     let lifx_devs = get_lifx_addresses();
-    let mut lifx_devs = lifx_devs.iter().cycle();
+    let mut lifx_devs = lifx_devs.iter().cycle().peekable();
     let mut lifx_target = lifx_devs
         .next()
         .unwrap_or_else(|| panic!("No LIFX devices found"))
@@ -525,36 +525,39 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                 stereo_once("KEY_TAPE");
                             }
                             (KEY_S, Pressed) => {
-                                lifx_target = lifx_devs.next().unwrap().clone();
-                                match get_lifx_state(&lifx_sock, lifx_target) {
+                                match get_lifx_state(
+                                    &lifx_sock,
+                                    lifx_devs.peek().unwrap().clone().clone(),
+                                ) {
                                     Err(e) => {
                                         println!("Failed to change active LIFX device: {}", e)
                                     }
                                     Ok(s) => {
-                                println!(
-                                    "Changing active LIFX device to {}:\n  {:?}",
-                                    lifx_target, s
-                                );
-                                    hsbk = s.2;
+                                        lifx_target = lifx_devs.next().unwrap().clone();
+                                        println!(
+                                            "Changing active LIFX device to {}:\n  {:?}",
+                                            lifx_target, s
+                                        );
+                                        hsbk = s.2;
 
-                                    // flash to half brightness
-                                    set_hsbk_delayed(
-                                        &lifx_sock,
-                                        lifx_target,
-                                        HSBK {
-                                            brightness: hsbk.brightness / 2,
-                                            ..hsbk
-                                        },
-                                        LIFX_FLASH_TIME,
-                                    );
-                                    // TODO does the bulb queue messages? if so this is unnecessary, if not it's a race condition
-                                    sleep(LIFX_FLASH_TIME);
-                                    set_hsbk_delayed(
-                                        &lifx_sock,
-                                        lifx_target,
-                                        hsbk,
-                                        LIFX_FLASH_TIME,
-                                    );
+                                        // flash to half brightness
+                                        set_hsbk_delayed(
+                                            &lifx_sock,
+                                            lifx_target,
+                                            HSBK {
+                                                brightness: hsbk.brightness / 2,
+                                                ..hsbk
+                                            },
+                                            LIFX_FLASH_TIME,
+                                        );
+                                        // TODO does the bulb queue messages? if so this is unnecessary, if not it's a race condition
+                                        sleep(LIFX_FLASH_TIME);
+                                        set_hsbk_delayed(
+                                            &lifx_sock,
+                                            lifx_target,
+                                            hsbk,
+                                            LIFX_FLASH_TIME,
+                                        );
                                     }
                                 }
                             }
