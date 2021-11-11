@@ -1,4 +1,4 @@
-use clap::{self, Clap};
+use clap::Clap;
 use evdev_rs::enums::{EventCode, EventType, EV_KEY::*};
 use evdev_rs::*;
 use get_if_addrs::{get_if_addrs, IfAddr, Ifv4Addr};
