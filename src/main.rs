@@ -56,7 +56,7 @@ struct Opts {
     #[clap(long = "no-gpio")]
     no_gpio: bool, // for when LEDs aren't plugged in
     #[clap(long = "ip")]
-    key_send_ip: IpAddr,
+    key_send_ips: Vec<IpAddr>,
     #[clap(long = "port")]
     key_send_port: u16,
 }
@@ -326,7 +326,11 @@ fn get_lifx_addresses() -> HashSet<SocketAddr> {
 fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opts) {
     // set up evdev-share
     let mut key_send_buf = [0; 2];
-    let key_send_addr = SocketAddr::new(opts.key_send_ip, opts.key_send_port);
+    let key_send_addrs: Vec<SocketAddr> = opts
+        .key_send_ips
+        .iter()
+        .map(|ip| SocketAddr::new(*ip, opts.key_send_port))
+        .collect();
     let key_send_sock = &UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], 0))).unwrap();
 
     // set up LIFX
@@ -476,12 +480,14 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                         }
                         key_send_buf[0] = k as u8;
                         key_send_buf[1] = ev_type as u8;
-                        key_send_sock
-                            .send_to(&mut key_send_buf, key_send_addr)
+                        key_send_addrs.iter().for_each(|a| {
+                            key_send_sock
+                            .send_to(&mut key_send_buf, a)
                             .unwrap_or_else(|e| {
                                 println!("Failed to send: {}", e);
                                 0
                             });
+                        });
                     }
                     Normal => {
                         let mut update_lifx =
