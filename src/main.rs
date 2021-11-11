@@ -482,11 +482,11 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                         key_send_buf[1] = ev_type as u8;
                         key_send_addrs.iter().for_each(|a| {
                             key_send_sock
-                            .send_to(&mut key_send_buf, a)
-                            .unwrap_or_else(|e| {
-                                println!("Failed to send: {}", e);
-                                0
-                            });
+                                .send_to(&mut key_send_buf, a)
+                                .unwrap_or_else(|e| {
+                                    println!("Failed to send: {}", e);
+                                    0
+                                });
                         });
                     }
                     Normal => {
