@@ -34,6 +34,11 @@ maintainability
         review all uses of 'clone', 'move', '&' etc.
         have 'handle_cmd' actually take a Command
             when debugging, print the command text
+    factor out red LED warnings: `let mut unknown_key = || set_led(LED::Red, true);`
+        why does `set_led` closure need to be mutable in the first place?
+        it will then become easier to add more features
+            e.g. logging the issue to console
+            or even use it for errors other than unexpected keys
     better event names in lircd.conf
 stability
     more asnycness
@@ -404,6 +409,9 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
         let e = rx.recv().unwrap();
         if let EventCode::EV_KEY(k) = e.event_code {
             let ev_type = KeyEventType::from(e.value);
+            if ev_type == Pressed {
+                set_led(LED::Red, false)
+            };
 
             // update state
             match ev_type {
@@ -462,7 +470,11 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
             } else {
                 match *mode.lock().unwrap() {
                     Idle => (),
-                    Quiet => (),
+                    Quiet => {
+                        if ev_type == Pressed {
+                            set_led(LED::Red, true);
+                        }
+                    }
                     Sending => {
                         if opts.debug {
                             println!("Sending: {:?}, {:?}", k, ev_type);
@@ -710,6 +722,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                     }
                                 }),
                             ),
+                            (_, Pressed) => set_led(LED::Red, true),
                             _ => (),
                         }
                     }
@@ -773,7 +786,11 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             KEY_BACKSPACE => tv("KEY_BACK"),
                             KEY_I => tv("KEY_INFO"),
                             KEY_ESC => tv("KEY_EXIT"),
-                            _ => (),
+                            _ => {
+                                if ev_type == Pressed {
+                                    set_led(LED::Red, true)
+                                }
+                            }
                         }
                     }
                 }
