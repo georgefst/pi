@@ -34,7 +34,6 @@ maintainability
         review all uses of 'clone', 'move', '&' etc.
         have 'handle_cmd' actually take a Command
             when debugging, print the command text
-        'set_mic_mute' should set 'mic_muted' and calling 'set_led'
     better event names in lircd.conf
 stability
     more asnycness
@@ -390,15 +389,6 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
         }
     };
 
-    let set_mic_mute = |b: bool| {
-        let res = Command::new("pactl")
-            .args(&["set-source-mute", "0", &b.to_string()])
-            .output();
-        handle_cmd(res, "toggle mic", &b.to_string(), true);
-    };
-    let mut mic_muted = false;
-    set_mic_mute(mic_muted);
-
     // flash all lights to show we have finished initialising
     for x in LED::iter() {
         set_led(x, true);
@@ -409,7 +399,6 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
     for l in mode.lock().unwrap().led() {
         set_led(l, true);
     }
-    set_led(LED::Red, mic_muted);
 
     loop {
         let e = rx.recv().unwrap();
@@ -580,14 +569,6 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             }
                             (KEY_PREVIOUSSONG, Pressed) => mpris("Previous", opts.debug),
                             (KEY_NEXTSONG, Pressed) => mpris("Next", opts.debug),
-                            (KEY_M, Pressed) => {
-                                //TODO we mostly use this when watching TV
-                                // would be preferable to just disable Mycroft whenever sound is being output by
-                                // any other application
-                                mic_muted = !mic_muted;
-                                set_mic_mute(mic_muted);
-                                set_led(LED::Red, mic_muted);
-                            }
                             (KEY_L, Pressed) => match get_lifx_state(&lifx_sock, lifx_target) {
                                 Ok((_, power0, _)) => {
                                     let power = match power0 {
