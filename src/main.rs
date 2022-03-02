@@ -727,9 +727,9 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             KEY_SPACE => {
                                 if ev_type == Pressed {
                                     tv_once("KEY_AUX");
-                                    sleep(Duration::from_millis(300));
+                                    sleep(Duration::from_secs(1));
                                     tv_once("KEY_AUX");
-                                    sleep(Duration::from_millis(300));
+                                    sleep(Duration::from_secs(1));
                                     tv_once("KEY_OK");
                                 }
                             }
