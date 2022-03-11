@@ -726,10 +726,11 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                         match &k {
                             KEY_SPACE => {
                                 if ev_type == Pressed {
+                                    let d = Duration::from_millis(if ctrl { 1000 } else { 350 });
                                     tv_once("KEY_AUX");
-                                    sleep(Duration::from_secs(1));
+                                    sleep(d);
                                     tv_once("KEY_AUX");
-                                    sleep(Duration::from_secs(1));
+                                    sleep(d);
                                     tv_once("KEY_OK");
                                 }
                             }
