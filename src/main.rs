@@ -495,8 +495,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             |event_type: KeyEventType, inc: &dyn Fn(HSBK) -> HSBK| match event_type
                             {
                                 Pressed => {
-                                    let sock = &lifx_sock;
-                                    match get_lifx_state(&sock, lifx_target) {
+                                    match get_lifx_state(&lifx_sock, lifx_target) {
                                         Ok((_, _, hsbk0)) => {
                                             hsbk = inc(hsbk0);
                                             set_hsbk(&lifx_sock, lifx_target, hsbk);
