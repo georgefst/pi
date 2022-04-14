@@ -545,6 +545,14 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                         hsbk = s.2;
 
                                         // flash to half brightness
+                                        let was_off = s.1 == PowerLevel::Standby;
+                                        if was_off {
+                                            set_lifx_power(
+                                                &lifx_sock,
+                                                lifx_target,
+                                                PowerLevel::Enabled,
+                                            )
+                                        };
                                         set_hsbk_delayed(
                                             &lifx_sock,
                                             lifx_target,
@@ -562,6 +570,13 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                             hsbk,
                                             LIFX_FLASH_TIME,
                                         );
+                                        if was_off {
+                                            set_lifx_power(
+                                                &lifx_sock,
+                                                lifx_target,
+                                                PowerLevel::Standby,
+                                            )
+                                        };
                                     }
                                 }
                             }
