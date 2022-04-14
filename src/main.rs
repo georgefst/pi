@@ -494,17 +494,15 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                         let mut update_lifx =
                             |event_type: KeyEventType, inc: &dyn Fn(HSBK) -> HSBK| match event_type
                             {
-                                Pressed => {
-                                    match get_lifx_state(&lifx_sock, lifx_target) {
-                                        Ok((_, _, hsbk0)) => {
-                                            hsbk = inc(hsbk0);
-                                            set_hsbk(&lifx_sock, lifx_target, hsbk);
-                                        }
-                                        Err(e) => {
-                                            println!("Failed to get bulb state: {:?}", e);
-                                        }
+                                Pressed => match get_lifx_state(&lifx_sock, lifx_target) {
+                                    Ok((_, _, hsbk0)) => {
+                                        hsbk = inc(hsbk0);
+                                        set_hsbk(&lifx_sock, lifx_target, hsbk);
                                     }
-                                }
+                                    Err(e) => {
+                                        println!("Failed to get bulb state: {:?}", e);
+                                    }
+                                },
                                 Repeated => {
                                     hsbk = inc(hsbk);
                                     set_hsbk(&lifx_sock, lifx_target, hsbk);
