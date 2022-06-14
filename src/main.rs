@@ -1,4 +1,4 @@
-use clap::Clap;
+use clap::Parser;
 use evdev_rs::enums::{EventCode, EventType, EV_KEY::*};
 use evdev_rs::*;
 use get_if_addrs::{get_if_addrs, IfAddr, Ifv4Addr};
@@ -53,15 +53,15 @@ features
 */
 
 // command line arg data
-#[derive(Clap, Debug)]
+#[derive(Parser, Debug)]
 struct Opts {
-    #[clap(short = 'd', long = "debug")]
+    #[clap(value_parser, short = 'd', long = "debug")]
     debug: bool, // print various extra data
-    #[clap(long = "no-gpio")]
+    #[clap(value_parser, long = "no-gpio")]
     no_gpio: bool, // for when LEDs aren't plugged in
-    #[clap(long = "ip")]
+    #[clap(value_parser, long = "ip")]
     key_send_ips: Vec<IpAddr>,
-    #[clap(long = "port")]
+    #[clap(value_parser, long = "port")]
     key_send_port: u16,
 }
 
@@ -149,7 +149,7 @@ fn read_dev(mode: Arc<Mutex<Mode>>, tx: Sender<InputEvent>, path: PathBuf, debug
                 },
             }
         };
-        match Device::new_from_fd(file) {
+        match Device::new_from_file(file) {
             Ok(dev) => {
                 if dev.has_event_type(&EventType::EV_KEY) {
                     let mode = *mode.lock().unwrap();
@@ -266,6 +266,10 @@ fn get_lifx_state(
             ..
         } = msg
         {
+            let power = match power {
+                0 => PowerLevel::Standby,
+                _ => PowerLevel::Enabled,
+            };
             return Ok((label, power, color));
         } else {
             println!("Unexpected LIFX message: {:?}", msg);

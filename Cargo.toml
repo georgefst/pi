@@ -5,14 +5,14 @@ authors = ["George Thomas <georgefsthomas@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-clap = "3.0.0-beta.2"
-evdev-rs = "0.4.0"
+clap = { version = "3.2.1", features = ["derive"] }
+evdev-rs = "0.5.0"
 gpio = "0.4.1"
-inotify = "0.8.0"
-strum = { version = "0.19", features = ["derive"] }
+inotify = "0.10.0"
+strum = { version = "0.24.1", features = ["derive"] }
 
 #TODO higher level, but doesn't have a LAN interface (yet - they are planning on it)
 # https://github.com/Aehmlo/lifxi/issues/7
 # lifxi = "0.1.1"
-lifx-core = "0.2.0"
+lifx-core = "0.3.1"
 get_if_addrs = "0.5.3" # only needed due to low-level-ness of 'lifx-core'
