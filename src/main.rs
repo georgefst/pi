@@ -94,7 +94,6 @@ fn main() {
     }
 
     // watch for new devices
-    let tx1 = tx.clone();
     thread::spawn(move || {
         let mut inotify = Inotify::init().unwrap();
         inotify.add_watch(&EVDEV_DIR, WatchMask::CREATE).unwrap();
@@ -107,7 +106,7 @@ fn main() {
                         let path = name.to_str().unwrap();
                         println!("Found new device: {}", path);
                         let full_path = PathBuf::from(EVDEV_DIR).join(path);
-                        read_dev(Arc::clone(&mode), tx1.clone(), full_path, debug);
+                        read_dev(Arc::clone(&mode), tx.clone(), full_path, debug);
                     }
                 }
             }
@@ -344,10 +343,9 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
     // set up LIFX
     let lifx_devs = get_lifx_addresses();
     let mut lifx_devs = lifx_devs.iter().cycle().peekable();
-    let mut lifx_target = lifx_devs
+    let mut lifx_target = *lifx_devs
         .next()
-        .unwrap_or_else(|| panic!("No LIFX devices found"))
-        .clone();
+        .unwrap_or_else(|| panic!("No LIFX devices found"));
     let lifx_sock = UdpSocket::bind(SocketAddr::from(([0, 0, 0, 0], LIFX_PORT))).unwrap();
     lifx_sock.set_read_timeout(Some(LIFX_TIMEOUT)).unwrap();
     //TODO this initial value is never actually used
@@ -420,8 +418,8 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
             // update state
             match ev_type {
                 Pressed => {
-                    held.insert(k.clone());
-                    last_key = k.clone();
+                    held.insert(k);
+                    last_key = k;
                 }
                 Released => {
                     held.remove(&k);
@@ -533,15 +531,12 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                 stereo_once("KEY_TAPE");
                             }
                             (KEY_S, Pressed) => {
-                                match get_lifx_state(
-                                    &lifx_sock,
-                                    lifx_devs.peek().unwrap().clone().clone(),
-                                ) {
+                                match get_lifx_state(&lifx_sock, **lifx_devs.peek().unwrap()) {
                                     Err(e) => {
                                         println!("Failed to change active LIFX device: {}", e)
                                     }
                                     Ok(s) => {
-                                        lifx_target = lifx_devs.next().unwrap().clone();
+                                        lifx_target = *lifx_devs.next().unwrap();
                                         println!(
                                             "Changing active LIFX device to {}:\n  {:?}",
                                             lifx_target, s
@@ -786,6 +781,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             KEY_DOT => tv("KEY_CHANNELUP"),
                             KEY_A => tv("KEY_AUX"),
                             KEY_S => tv("KEY_SETUP"),
+                            KEY_T => tv("KEY_SUBTITLE"),
                             KEY_G => tv("KEY_G"),
                             KEY_Q => tv("KEY_MENU"),
                             KEY_UP => tv("KEY_UP"),
