@@ -6,7 +6,8 @@ edition = "2018"
 
 [dependencies]
 clap = { version = "3.2.1", features = ["derive"] }
-evdev-rs = "0.5.0"
+evdev-rs = { git = "https://github.com/georgefst/evdev-rs", branch = "revert-2452672" }
+evdev-sys = { git = "https://github.com/georgefst/evdev-rs", branch = "revert-2452672" }
 gpio = "0.4.1"
 inotify = "0.10.0"
 strum = { version = "0.24.1", features = ["derive"] }

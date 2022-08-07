@@ -90,9 +90,8 @@ dependencies = [
 
 [[package]]
 name = "evdev-rs"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7db51abf6b3205a6e6e8dd68d7a5414d7c50d61736a6f4c9b97df86ef5567cf"
+version = "0.6.0"
+source = "git+https://github.com/georgefst/evdev-rs?branch=revert-2452672#99fb81ff3215eda88fb24ff94d22bb5a9f1bdbba"
 dependencies = [
  "bitflags",
  "evdev-sys",
@@ -102,9 +101,8 @@ dependencies = [
 
 [[package]]
 name = "evdev-sys"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80c71458f1f28b418779703f0fb17771f08562afacf0ee30176cca0e75e9e7d4"
+version = "0.2.5"
+source = "git+https://github.com/georgefst/evdev-rs?branch=revert-2452672#99fb81ff3215eda88fb24ff94d22bb5a9f1bdbba"
 dependencies = [
  "cc",
  "libc",
@@ -259,6 +257,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "evdev-rs",
+ "evdev-sys",
  "get_if_addrs",
  "gpio",
  "inotify",
