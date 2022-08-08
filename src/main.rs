@@ -781,6 +781,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             KEY_DOT => tv("KEY_CHANNELUP"),
                             KEY_A => tv("KEY_AUX"),
                             KEY_S => tv("KEY_SETUP"),
+                            KEY_R => tv("KEY_RED"),
                             KEY_T => tv("KEY_SUBTITLE"),
                             KEY_G => tv("KEY_G"),
                             KEY_Q => tv("KEY_MENU"),
