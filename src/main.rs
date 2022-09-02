@@ -1,5 +1,8 @@
 use clap::Parser;
-use evdev_rs::enums::{EventCode, EventType, EV_KEY::*};
+use evdev_rs::enums::{
+    EventCode, EventType,
+    EV_KEY::{self, *},
+};
 use evdev_rs::*;
 use get_if_addrs::{get_if_addrs, IfAddr, Ifv4Addr};
 use gpio::{sysfs::SysFsGpioOutput, GpioOut};
@@ -418,17 +421,27 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
             // update state
             match ev_type {
                 Pressed => {
-                    held.insert(k);
+                    match mod_key(k) {
+                        Some(k) => {
+                            held.insert(k);
+                            ()
+                        }
+                        None => (),
+                    }
                     last_key = k;
                 }
-                Released => {
-                    held.remove(&k);
-                }
+                Released => match mod_key(k) {
+                    Some(k) => {
+                        held.remove(&k);
+                        ()
+                    }
+                    None => (),
+                },
                 Repeated => {}
             }
-            let ctrl = held.contains(&KEY_LEFTCTRL) || held.contains(&KEY_RIGHTCTRL);
-            let shift = held.contains(&KEY_LEFTSHIFT) || held.contains(&KEY_RIGHTSHIFT);
-            let _alt = held.contains(&KEY_LEFTALT); // RIGHT_ALT is reserved for switching modes
+            let ctrl = held.contains(&ModKey::Ctrl);
+            let shift = held.contains(&ModKey::Shift);
+            let _alt = held.contains(&ModKey::Alt);
 
             if opts.debug {
                 println!("{:?},  {:?}", k, ev_type);
@@ -467,7 +480,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                         set_led(l, true)
                     }
                 }
-            } else if held.contains(&KEY_RIGHTALT) {
+            } else if held.contains(&ModKey::RightAlt) {
                 // just wait for everything to be released
             } else {
                 match *mode.lock().unwrap() {
@@ -903,5 +916,23 @@ impl KeyEventType {
             2 => Repeated,
             n => panic!("Invalid key event type: {}", n),
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum ModKey {
+    Ctrl,
+    Shift,
+    Alt,
+    RightAlt, // RIGHT_ALT is reserved for switching modes
+}
+fn mod_key(k: EV_KEY) -> Option<ModKey> {
+    match k {
+        KEY_LEFTCTRL => Some(ModKey::Ctrl),
+        KEY_RIGHTCTRL => Some(ModKey::Ctrl),
+        KEY_LEFTSHIFT => Some(ModKey::Shift),
+        KEY_RIGHTSHIFT => Some(ModKey::Shift),
+        KEY_LEFTALT => Some(ModKey::Alt),
+        _ => None,
     }
 }
