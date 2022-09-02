@@ -929,6 +929,7 @@ fn mod_key(k: EV_KEY) -> Option<ModKey> {
         KEY_LEFTSHIFT => Some(ModKey::Shift),
         KEY_RIGHTSHIFT => Some(ModKey::Shift),
         KEY_LEFTALT => Some(ModKey::Alt),
+        KEY_RIGHTALT => Some(ModKey::RightAlt),
         _ => None,
     }
 }
