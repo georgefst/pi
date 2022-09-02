@@ -421,22 +421,12 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
             // update state
             match ev_type {
                 Pressed => {
-                    match mod_key(k) {
-                        Some(k) => {
-                            held.insert(k);
-                            ()
-                        }
-                        None => (),
-                    }
+                    mod_key(k).map(|k| held.insert(k));
                     last_key = k;
                 }
-                Released => match mod_key(k) {
-                    Some(k) => {
-                        held.remove(&k);
-                        ()
-                    }
-                    None => (),
-                },
+                Released => {
+                    mod_key(k).map(|k| held.remove(&k));
+                }
                 Repeated => {}
             }
             let ctrl = held.contains(&ModKey::Ctrl);
