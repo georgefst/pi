@@ -7,7 +7,7 @@ use evdev_rs::*;
 use get_if_addrs::{get_if_addrs, IfAddr, Ifv4Addr};
 use gpio::{sysfs::SysFsGpioOutput, GpioOut};
 use inotify::{EventMask, Inotify, WatchMask};
-use lifx_core::{LifxString, Message, PowerLevel, RawMessage, HSBK};
+use lifx_core::{LifxString, Message, PowerLevel, RawMessage, Service, HSBK};
 use std::iter::Iterator;
 use std::net::*;
 use std::path::PathBuf;
@@ -316,7 +316,7 @@ fn get_lifx_addresses() -> HashSet<SocketAddr> {
                     Ok(m) => match m {
                         Message::StateService {
                             port: _,
-                            service: _,
+                            service: Service::UDP,
                         } => {
                             println!("Found LIFX device: {}", addr);
                             devs.insert(addr);
