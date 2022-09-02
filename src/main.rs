@@ -37,6 +37,8 @@ maintainability
         review all uses of 'clone', 'move', '&' etc.
         have 'handle_cmd' actually take a Command
             when debugging, print the command text
+        factor out `set_led(LED::Red, true)`
+            including non-modifier check
     factor out red LED warnings: `let mut unknown_key = || set_led(LED::Red, true);`
         why does `set_led` closure need to be mutable in the first place?
         it will then become easier to add more features
@@ -476,7 +478,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                 match *mode.lock().unwrap() {
                     Idle => (),
                     Quiet => {
-                        if ev_type == Pressed {
+                        if ev_type == Pressed && mod_key(k).is_none() {
                             set_led(LED::Red, true);
                         }
                     }
@@ -729,7 +731,11 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                     }
                                 }),
                             ),
-                            (_, Pressed) => set_led(LED::Red, true),
+                            (k, Pressed) => {
+                                if mod_key(k).is_none() {
+                                    set_led(LED::Red, true)
+                                }
+                            }
                             _ => (),
                         }
                     }
@@ -797,7 +803,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             KEY_I => tv("KEY_INFO"),
                             KEY_ESC => tv("KEY_EXIT"),
                             _ => {
-                                if ev_type == Pressed {
+                                if ev_type == Pressed && mod_key(k).is_none() {
                                     set_led(LED::Red, true)
                                 }
                             }
