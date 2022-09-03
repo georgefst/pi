@@ -742,10 +742,10 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                         }
                     }
                     TV => {
-                        let tv_lirc_name = "LG AKB74475403";
+                        let tv_lirc_name = "LG-AKB74475403";
                         let tv = |cmd: &str| ir_cmd(tv_lirc_name, cmd, ev_type, opts.debug);
                         let tv_once = |cmd: &str| ir_cmd_once(tv_lirc_name, cmd, opts.debug);
-                        let switcher_lirc_name = "PROZOR B073TXX3KV";
+                        let switcher_lirc_name = "PROZOR-B073TXX3KV";
                         let switcher = |cmd: &str| ir_cmd(switcher_lirc_name, cmd, ev_type, opts.debug);
                         match k {
                             KEY_SPACE => {
