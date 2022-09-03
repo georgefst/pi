@@ -516,8 +516,10 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                 }
                                 Released => (),
                             };
-                        let stereo = |cmd: &str| ir_cmd("stereo", cmd, ev_type, opts.debug);
-                        let stereo_once = |cmd: &str| ir_cmd_once("stereo", cmd, opts.debug);
+                        let stereo_lirc_name = "rak-ch215wh";
+                        let stereo = |cmd: &str| ir_cmd(stereo_lirc_name, cmd, ev_type, opts.debug);
+                        let stereo_once =
+                            |cmd: &str| ir_cmd_once(stereo_lirc_name, cmd, opts.debug);
                         match (k, ev_type) {
                             (KEY_ESC, Released) => {
                                 if ctrl {
@@ -740,8 +742,9 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                         }
                     }
                     TV => {
-                        let tv = |cmd: &str| ir_cmd("tv", cmd, ev_type, opts.debug);
-                        let tv_once = |cmd: &str| ir_cmd_once("tv", cmd, opts.debug);
+                        let tv_lirc_name = "LG AKB74475403";
+                        let tv = |cmd: &str| ir_cmd(tv_lirc_name, cmd, ev_type, opts.debug);
+                        let tv_once = |cmd: &str| ir_cmd_once(tv_lirc_name, cmd, opts.debug);
                         let switcher = |cmd: &str| ir_cmd("switcher", cmd, ev_type, opts.debug);
                         match k {
                             KEY_SPACE => {
