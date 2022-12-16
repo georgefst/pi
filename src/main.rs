@@ -746,7 +746,8 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                         let tv = |cmd: &str| ir_cmd(tv_lirc_name, cmd, ev_type, opts.debug);
                         let tv_once = |cmd: &str| ir_cmd_once(tv_lirc_name, cmd, opts.debug);
                         let switcher_lirc_name = "PROZOR-B073TXX3KV";
-                        let switcher = |cmd: &str| ir_cmd(switcher_lirc_name, cmd, ev_type, opts.debug);
+                        let switcher =
+                            |cmd: &str| ir_cmd(switcher_lirc_name, cmd, ev_type, opts.debug);
                         match k {
                             KEY_SPACE => {
                                 if ev_type == Pressed {
