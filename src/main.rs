@@ -850,10 +850,32 @@ fn xinput(action: XInput, debug: bool) {
 }
 
 fn mpris(cmd: &str, debug: bool) {
+    let out = String::from_utf8(
+        (match Command::new("qdbus").output() {
+            Ok(x) => x,
+            Err(e) => {
+                println!("Error running qdbus: {}", e);
+                return;
+            }
+        })
+        .stdout,
+    )
+    .unwrap();
+    let service = match out
+        .lines()
+        .find(|s| s.starts_with(" org.mpris.MediaPlayer2.spotifyd"))
+    {
+        Some(x) => x,
+        None => {
+            println!("Failed to find spotifyd in qdbus output");
+            return;
+        }
+    }
+    .trim();
     let res = Command::new("dbus-send")
         .args(&[
             "--print-reply",
-            "--dest=org.mpris.MediaPlayer2.spotifyd",
+            &(String::from("--dest=") + service),
             "/org/mpris/MediaPlayer2",
             &(String::from("org.mpris.MediaPlayer2.Player.") + cmd),
         ])
