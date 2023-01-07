@@ -5,7 +5,7 @@ authors = ["George Thomas <georgefsthomas@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-clap = { version = "3.2.1", features = ["derive"] }
+clap = { version = "3.2", features = ["derive"] }
 evdev-rs = { git = "https://github.com/georgefst/evdev-rs", branch = "revert-2452672" }
 evdev-sys = { git = "https://github.com/georgefst/evdev-rs", branch = "revert-2452672" }
 gpio = "0.4.1"
