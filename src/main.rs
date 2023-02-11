@@ -8,8 +8,6 @@ use get_if_addrs::{get_if_addrs, IfAddr, Ifv4Addr};
 use gpio::{sysfs::SysFsGpioOutput, GpioOut};
 use inotify::{EventMask, Inotify, WatchMask};
 use lifx_core::{LifxString, Message, PowerLevel, RawMessage, Service, HSBK};
-use std::iter::Iterator;
-use std::net::*;
 use std::path::PathBuf;
 use std::process::Command;
 use std::result::*;
@@ -23,6 +21,7 @@ use std::{
     collections::HashSet,
     fs::{read_dir, File},
 };
+use std::{io::Write, net::*, process::Stdio};
 use strum::*; // should be strum::EnumIter, but https://github.com/rust-analyzer/rust-analyzer/issues/6053
 
 use KeyEventType::*;
@@ -464,6 +463,14 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                     if new_mode == Idle {
                         xinput(XInput::Enable, opts.debug)
                     };
+                    if prev_mode == Quiet {
+                        set_system_led("led0", "mmc0");
+                        set_system_led("led1", "default-on");
+                    }
+                    if new_mode == Quiet {
+                        set_system_led("led0", "none");
+                        set_system_led("led1", "none");
+                    }
                     println!("Entering mode: {:?}", new_mode);
                     for l in prev_mode.led() {
                         set_led(l, false)
@@ -881,6 +888,21 @@ fn mpris(cmd: &str, debug: bool) {
         ])
         .output();
     handle_cmd(res, "perform mpris command", cmd, debug);
+}
+
+// TODO avoid sudo (maybe by setting up udev rule to create a special group), then just use `fs::write`
+fn set_system_led(led: &str, value: &str) {
+    Command::new("sudo")
+        .arg("tee")
+        .arg(String::from("/sys/class/leds/") + &String::from(led) + "/trigger")
+        .stdout(Stdio::null())
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap()
+        .stdin
+        .unwrap()
+        .write_all(&(String::from(value) + "\n").as_bytes())
+        .unwrap();
 }
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Hash, EnumIter)]
