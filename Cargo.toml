@@ -10,6 +10,8 @@ evdev-rs = { git = "https://github.com/georgefst/evdev-rs", branch = "revert-245
 evdev-sys = { git = "https://github.com/georgefst/evdev-rs", branch = "revert-2452672" }
 gpio = "0.4.1"
 inotify = "0.10.0"
+openssl = { version = "0.10", features = ["vendored"] }
+reqwest = { version = "0.11", features = ["blocking", "json"] }
 strum = { version = "0.24.1", features = ["derive"] }
 
 #TODO higher level, but doesn't have a LAN interface (yet - they are planning on it)

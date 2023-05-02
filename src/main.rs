@@ -540,9 +540,28 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                 }
                             }
                             (KEY_P, Pressed) => {
-                                stereo_once("KEY_POWER");
-                                sleep(Duration::from_secs(1));
-                                stereo_once("KEY_TAPE");
+                                if ctrl {
+                                    let on = (!shift).to_string();
+                                    match reqwest::blocking::get(
+                                        String::from(
+                                            "http://192.168.1.217/rpc/Switch.Set?id=0&on=",
+                                        ) + &on,
+                                    ) {
+                                        Err(e) => println!("HTTP request failed: {}", e),
+                                        Ok(resp) => match resp.json::<bool>() {
+                                            Err(e) => println!("JSON decoding failed: {}", e),
+                                            Ok(json) => {
+                                                if opts.debug {
+                                                    println!("Shelly plug response: {:#?}", json);
+                                                }
+                                            }
+                                        },
+                                    }
+                                } else {
+                                    stereo_once("KEY_POWER");
+                                    sleep(Duration::from_secs(1));
+                                    stereo_once("KEY_TAPE");
+                                }
                             }
                             (KEY_S, Pressed) => {
                                 match get_lifx_state(&lifx_sock, **lifx_devs.peek().unwrap()) {
