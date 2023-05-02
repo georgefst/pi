@@ -548,7 +548,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                         ) + &on,
                                     ) {
                                         Err(e) => println!("HTTP request failed: {}", e),
-                                        Ok(resp) => match resp.json::<bool>() {
+                                        Ok(resp) => match resp.json::<HashMap<String, String>>() {
                                             Err(e) => println!("JSON decoding failed: {}", e),
                                             Ok(json) => {
                                                 if opts.debug {
