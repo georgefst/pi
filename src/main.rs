@@ -544,7 +544,9 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                     let on = (!shift).to_string();
                                     match reqwest::blocking::get(
                                         String::from(
-                                            "http://192.168.1.217/rpc/Switch.Set?id=0&on=",
+                                            // TODO I don't really like the string-iness of the library
+                                            // (or at least the way I'm using it)
+                                            "http://192.168.1.215/rpc/Switch.Set?id=0&on=",
                                         ) + &on,
                                     ) {
                                         Err(e) => println!("HTTP request failed: {}", e),
