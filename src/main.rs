@@ -546,7 +546,7 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                                         String::from(
                                             // TODO I don't really like the string-iness of the library
                                             // (or at least the way I'm using it)
-                                            "http://192.168.1.215/rpc/Switch.Set?id=0&on=",
+                                            "http://192.168.1.114/rpc/Switch.Set?id=0&on=",
                                         ) + &on,
                                     ) {
                                         Err(e) => println!("HTTP request failed: {}", e),
