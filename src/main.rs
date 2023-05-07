@@ -622,6 +622,9 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             (KEY_NEXTSONG, Pressed) => mpris("Next", opts.debug),
                             (KEY_L, Pressed) => match get_lifx_state(&lifx_sock, lifx_target) {
                                 Ok((_, power0, _)) => {
+                                    if opts.debug {
+                                        println!("Got LIFX power: {:?}", power0);
+                                    }
                                     let power = match power0 {
                                         PowerLevel::Enabled => PowerLevel::Standby,
                                         PowerLevel::Standby => PowerLevel::Enabled,
