@@ -541,13 +541,10 @@ fn respond_to_events(mode: Arc<Mutex<Mode>>, rx: Receiver<InputEvent>, opts: Opt
                             }
                             (KEY_P, Pressed) => {
                                 if ctrl {
-                                    let on = (!shift).to_string();
                                     match reqwest::blocking::get(
-                                        String::from(
-                                            // TODO I don't really like the string-iness of the library
-                                            // (or at least the way I'm using it)
-                                            "http://192.168.1.114/rpc/Switch.Set?id=0&on=",
-                                        ) + &on,
+                                        // TODO I don't really like the string-iness of the library
+                                        // (or at least the way I'm using it)
+                                        "http://192.168.1.114/rpc/Switch.Toggle?id=0",
                                     ) {
                                         Err(e) => println!("HTTP request failed: {}", e),
                                         Ok(resp) => match resp.json::<HashMap<String, bool>>() {
