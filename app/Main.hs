@@ -249,6 +249,7 @@ data IRCmdType
     | IRStop
     | IROnce
     deriving (Show)
+
 data ActionOpts = ActionOpts
     { ledErrorPin :: Int
     , keyboard :: Evdev.Device
@@ -257,7 +258,6 @@ data ActionOpts = ActionOpts
     , keySendPort :: PortNumber
     , keySendIps :: [IP]
     }
-
 runAction ::
     (MonadIO m, MonadState AppState m, MonadLifx m, MonadLog Text m, MonadError Error m) =>
     ActionOpts ->
