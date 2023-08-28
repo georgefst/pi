@@ -483,10 +483,7 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
             l <- send GetCurrentLight
             c <-
                 send GetLightColourCache >>= \case
-                    Nothing -> do
-                        c <- send $ GetLightColour l
-                        send $ SetLightColourCache c
-                        pure c
+                    Nothing -> send $ GetLightColour l
                     Just c -> pure c
             let c' = f c
             send $ SetLightColourCache c'
