@@ -185,15 +185,19 @@ main = do
                 ( SF.drainMapM \case
                     ErrorEvent e -> handleError e
                     LogEvent t -> logMessage t
-                    ActionEvent action -> runAction handleError opts' action pure
-                    ActionEventWithCallback f action -> runAction handleError opts' action $ liftIO . f
+                    ActionEvent f action ->
+                        (either handleError pure <=< runExceptT)
+                            . (logMessage . snd @() <=< runM)
+                            . (sendM . firstM (liftIO . f) <=< translate (runSimpleAction opts'))
+                            . Eff.runWriter
+                            $ raise action
                 )
                 . S.mapMaybeM gets
                 . (SK.toStream . SK.hoist liftIO . SK.fromStream)
                 . S.append
                     ( -- flash all lights to show we have finished initialising
                       S.fromList
-                        . map (const . Just . ActionEvent . simpleAction)
+                        . map (const . Just . ActionEvent mempty . simpleAction)
                         . intersperse (Sleep 0.4)
                         -- TODO we shouldn't have to actually set the mode - I only really want to flash the LED
                         -- but then there's no real harm, except that and that we have to repeat the initial states
@@ -207,7 +211,7 @@ main = do
                 $ S.parList
                     id
                     [ S.repeatM $
-                        const . Just . either (ErrorEvent . Error "Decode failure") ActionEvent . decodeAction . BSL.fromStrict
+                        const . Just . either (ErrorEvent . Error "Decode failure") (ActionEvent mempty) . decodeAction . BSL.fromStrict
                             <$> recv eventSocket 4096
                     , scanStream (KeyboardState False False False Nothing) (dispatchKeys opts)
                         . S.repeatM
@@ -216,8 +220,7 @@ main = do
                     ]
 
 data Event where
-    ActionEvent :: (Action ()) -> Event
-    ActionEventWithCallback :: (a -> IO ()) -> (Action a) -> Event
+    ActionEvent :: (a -> IO ()) -> (Action a) -> Event
     LogEvent :: Text -> Event
     ErrorEvent :: Error -> Event
 
@@ -348,19 +351,6 @@ runSimpleAction opts@SimpleActionOpts{setLED {- TODO GHC doesn't yet support imp
 type Action a = Eff '[SimpleAction] a
 simpleAction :: SimpleAction a -> Action a -- this is mostly to help with type inference
 simpleAction = send
-runAction ::
-    (MonadLog Text m, MonadIO m, MonadState AppState m, MonadLifx m) =>
-    (Error -> m ()) ->
-    SimpleActionOpts ->
-    Eff '[SimpleAction] a ->
-    (a -> ExceptT Error m ()) ->
-    m ()
-runAction handleError opts action run' =
-    (either handleError pure <=< runExceptT)
-        . (logMessage . snd @() <=< runM)
-        . (sendM . firstM run' <=< translate (runSimpleAction opts))
-        . Eff.runWriter
-        $ raise action
 toggleCurrentLight :: Action ()
 toggleCurrentLight = do
     l <- send GetCurrentLight
@@ -502,7 +492,7 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
         Released -> l .~ False
         Repeated -> id
     simpleAct = act . simpleAction
-    act = Just . ActionEvent
+    act = Just . ActionEvent mempty
     irOnce = simpleAct .: SendIR IROnce
     irHold = \case
         Pressed -> simpleAct .: SendIR IRStart
@@ -539,10 +529,10 @@ webServer f =
     f1 :: (a -> Text) -> Action a -> OkapiT IO Result
     f1 show' x = do
         m <- liftIO newEmptyMVar
-        f $ ActionEventWithCallback (putMVar m) x
+        f $ ActionEvent (putMVar m) x
         okPlainText [] . (<> "\n") . show' =<< liftIO (takeMVar m)
     f2 :: Action () -> OkapiT IO Result
-    f2 x = f (ActionEvent x) >> noContent []
+    f2 x = f (ActionEvent mempty x) >> noContent []
 
 warpSettings ::
     Warp.Port ->
