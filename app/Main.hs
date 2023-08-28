@@ -203,7 +203,9 @@ main = do
                 . S.cons (const $ Just $ LogEvent "Starting...")
                 $ S.parList
                     id
-                    [ scanStream (KeyboardState False False False Nothing) (dispatchKeys opts)
+                    [ scanStream
+                        (KeyboardState False False False Nothing)
+                        (dispatchKeys $ opts & \Opts{..} -> KeyboardOpts{..})
                         . S.repeatM
                         $ Evdev.eventData <$> Evdev.nextEvent keyboard -- TODO use `evdev-streamly`
                     , S.repeatM $ const . Just <$> takeMVar eventMVar
@@ -340,6 +342,10 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         response <- liftIO $ flip httpLbs man =<< parseRequest "http://192.168.1.114/rpc/Switch.Toggle?id=0"
         logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
 
+newtype KeyboardOpts = KeyboardOpts
+    { flashTime :: NominalDiffTime
+    }
+    deriving (Generic)
 data KeyboardState = KeyboardState
     { shift :: Bool
     , ctrl :: Bool
@@ -347,7 +353,7 @@ data KeyboardState = KeyboardState
     , modeChangeState :: Maybe (Maybe Key)
     }
     deriving (Generic)
-dispatchKeys :: Opts -> Evdev.EventData -> KeyboardState -> (AppState -> Maybe Event, KeyboardState)
+dispatchKeys :: KeyboardOpts -> Evdev.EventData -> KeyboardState -> (AppState -> Maybe Event, KeyboardState)
 dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
     Just mk -> case event of
         KeyEvent KeyRightalt Released -> (,s & #modeChangeState .~ Nothing) case mk of
