@@ -168,7 +168,7 @@ main = do
     race_
         ( Warp.runSettings
             (warpSettings opts.httpPort $ putMVar eventMVar . ErrorEvent . Error "HTTP error")
-            (webServer $ liftIO . putMVar eventMVar . ActionEvent)
+            (webServer $ liftIO . putMVar eventMVar)
             -- TODO disabled - see `gpioMonitor` definition
             -- `race_` gpioMonitor
         )
@@ -180,17 +180,13 @@ main = do
             (Just $ fromIntegral opts.lifxPort)
         $ do
             keyboard <- liftIO $ Evdev.newDevice "/dev/input/event3"
+            let opts' = opts & \Opts{..} -> SimpleActionOpts{..}
             S.fold
                 ( SF.drainMapM \case
                     ErrorEvent e -> handleError e
                     LogEvent t -> logMessage t
-                    ActionEvent action ->
-                        (either handleError pure <=< runExceptT)
-                            . (logMessage . snd @() <=< runM)
-                            . subsumeFront
-                            . translate (runSimpleAction (opts & \Opts{..} -> SimpleActionOpts{..}))
-                            . Eff.runWriter
-                            $ raise action
+                    ActionEvent action -> runAction handleError opts' action pure
+                    ActionEventWithCallback f action -> runAction handleError opts' action $ liftIO . f
                 )
                 . S.mapMaybeM gets
                 . (SK.toStream . SK.hoist liftIO . SK.fromStream)
@@ -219,10 +215,11 @@ main = do
                     , S.repeatM $ const . Just <$> takeMVar eventMVar
                     ]
 
-data Event
-    = ActionEvent Action
-    | LogEvent Text
-    | ErrorEvent Error
+data Event where
+    ActionEvent :: (Action ()) -> Event
+    ActionEventWithCallback :: (a -> IO ()) -> (Action a) -> Event
+    LogEvent :: Text -> Event
+    ErrorEvent :: Error -> Event
 
 data SimpleAction a where
     Exit :: SimpleAction ()
@@ -348,17 +345,30 @@ runSimpleAction opts@SimpleActionOpts{setLED {- TODO GHC doesn't yet support imp
         response <- liftIO $ flip httpLbs man =<< parseRequest "http://192.168.1.114/rpc/Switch.Toggle?id=0"
         logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
 
-type Action = forall m. (MonadIO m) => Eff [SimpleAction, m] ()
-simpleAction :: SimpleAction a -> Action -- this is mostly to help with type inference
-simpleAction a = void $ send a
-toggleCurrentLight :: Action
+type Action a = Eff '[SimpleAction] a
+simpleAction :: SimpleAction a -> Action a -- this is mostly to help with type inference
+simpleAction = send
+runAction ::
+    (MonadLog Text m, MonadIO m, MonadState AppState m, MonadLifx m) =>
+    (Error -> m ()) ->
+    SimpleActionOpts ->
+    Eff '[SimpleAction] a ->
+    (a -> ExceptT Error m ()) ->
+    m ()
+runAction handleError opts action run' =
+    (either handleError pure <=< runExceptT)
+        . (logMessage . snd @() <=< runM)
+        . (sendM . firstM run' <=< translate (runSimpleAction opts))
+        . Eff.runWriter
+        $ raise action
+toggleCurrentLight :: Action ()
 toggleCurrentLight = do
     l <- send GetCurrentLight
     p <- send $ GetLightPower l
     send $ SetLightPower l $ not p
-getCurrentLightName :: (Text -> IO ()) -> Action
-getCurrentLightName f = liftIO . f =<< send . GetLightName =<< send GetCurrentLight
-modifyCurrentLightColour :: (HSBK -> HSBK) -> Action
+getCurrentLightName :: Action Text
+getCurrentLightName = send . GetLightName =<< send GetCurrentLight
+modifyCurrentLightColour :: (HSBK -> HSBK) -> Action ()
 modifyCurrentLightColour f = do
     l <- send GetCurrentLight
     c <-
@@ -371,19 +381,19 @@ modifyCurrentLightColour f = do
     let c' = f c
     send $ SetLightColourCache c'
     send $ SetLightColour l 0 c'
-toggleHifi :: Action
+toggleHifi :: Action ()
 toggleHifi = do
     send $ SendIR IROnce IRHifi "KEY_POWER"
     send $ Sleep 1
     send $ SendIR IROnce IRHifi "KEY_TAPE"
-toggleTvMode :: NominalDiffTime -> Action
+toggleTvMode :: NominalDiffTime -> Action ()
 toggleTvMode t = do
     send $ SendIR IROnce IRTV "KEY_AUX"
     send $ Sleep t
     send $ SendIR IROnce IRTV "KEY_AUX"
     send $ Sleep t
     send $ SendIR IROnce IRTV "KEY_OK"
-nextLightAndFlash :: NominalDiffTime -> Action
+nextLightAndFlash :: NominalDiffTime -> Action ()
 nextLightAndFlash t = do
     send NextLight
     l <- send GetCurrentLight
@@ -508,7 +518,7 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
 
 -- TODO re-evaluate this now that we have web API
-decodeAction :: BSL.ByteString -> Either (BSL.ByteString, B.ByteOffset, String) Action
+decodeAction :: BSL.ByteString -> Either (BSL.ByteString, B.ByteOffset, String) (Action ())
 decodeAction =
     fmap thd3 . runGetOrFail do
         B.get @Word8 >>= \case
@@ -516,7 +526,7 @@ decodeAction =
             1 -> pure toggleCurrentLight
             n -> fail $ "unknown action ID: " <> show n
 
-webServer :: (forall m. (MonadIO m) => Action -> m ()) -> Wai.Application
+webServer :: (forall m. (MonadIO m) => Event -> m ()) -> Wai.Application
 webServer f =
     makeOkapiApp id $
         asum
@@ -526,13 +536,13 @@ webServer f =
             ]
   where
     withGetRoute s x = Okapi.get >> seg s >> x
-    f1 :: (a -> Text) -> ((a -> IO ()) -> Action) -> OkapiT IO Result
+    f1 :: (a -> Text) -> Action a -> OkapiT IO Result
     f1 show' x = do
         m <- liftIO newEmptyMVar
-        f $ x $ putMVar m
+        f $ ActionEventWithCallback (putMVar m) x
         okPlainText [] . (<> "\n") . show' =<< liftIO (takeMVar m)
-    f2 :: Action -> OkapiT IO Result
-    f2 x = f x >> noContent []
+    f2 :: Action () -> OkapiT IO Result
+    f2 x = f (ActionEvent x) >> noContent []
 
 warpSettings ::
     Warp.Port ->
