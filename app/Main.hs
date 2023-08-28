@@ -190,9 +190,7 @@ main = do
                             . subsumeFront
                             . translate (runSimpleAction (opts & \Opts{..} -> SimpleActionOpts{..}))
                             . Eff.runWriter
-                            . raise
-                            . action
-                            $ opts & \Opts{..} -> ActionOpts{..}
+                            $ raise action
                 )
                 . S.mapMaybeM gets
                 . (SK.toStream . SK.hoist liftIO . SK.fromStream)
@@ -215,7 +213,7 @@ main = do
                     [ S.repeatM $
                         const . Just . either (ErrorEvent . Error "Decode failure") ActionEvent . decodeAction . BSL.fromStrict
                             <$> recv eventSocket 4096
-                    , scanStream (KeyboardState False False False Nothing) dispatchKeys
+                    , scanStream (KeyboardState False False False Nothing) (dispatchKeys opts)
                         . S.repeatM
                         $ Evdev.eventData <$> Evdev.nextEvent keyboard -- TODO use `evdev-streamly`
                     , S.repeatM $ const . Just <$> takeMVar eventMVar
@@ -350,21 +348,18 @@ runSimpleAction opts@SimpleActionOpts{setLED {- TODO GHC doesn't yet support imp
         response <- liftIO $ flip httpLbs man =<< parseRequest "http://192.168.1.114/rpc/Switch.Toggle?id=0"
         logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
 
-type Action = forall m. (MonadIO m) => ActionOpts -> Eff [SimpleAction, m] ()
+type Action = forall m. (MonadIO m) => Eff [SimpleAction, m] ()
 simpleAction :: SimpleAction a -> Action
-simpleAction a = const $ void $ send a
-newtype ActionOpts = ActionOpts
-    { flashTime :: NominalDiffTime
-    }
+simpleAction a = void $ send a
 toggleCurrentLight :: Action
-toggleCurrentLight = const do
+toggleCurrentLight = do
     l <- send GetCurrentLight
     p <- send $ GetLightPower l
     send $ SetLightPower l $ not p
 getCurrentLightName :: (Text -> IO ()) -> Action
-getCurrentLightName f = const $ liftIO . f =<< send . GetLightName =<< send GetCurrentLight
+getCurrentLightName f = liftIO . f =<< send . GetLightName =<< send GetCurrentLight
 modifyCurrentLightColour :: (HSBK -> HSBK) -> Action
-modifyCurrentLightColour f = const do
+modifyCurrentLightColour f = do
     l <- send GetCurrentLight
     c <-
         send GetLightColourCache >>= \case
@@ -377,26 +372,26 @@ modifyCurrentLightColour f = const do
     send $ SetLightColourCache c'
     send $ SetLightColour l 0 c'
 toggleHifi :: Action
-toggleHifi = const do
+toggleHifi = do
     send $ SendIR IROnce IRHifi "KEY_POWER"
     send $ Sleep 1
     send $ SendIR IROnce IRHifi "KEY_TAPE"
 toggleTvMode :: NominalDiffTime -> Action
-toggleTvMode t = const do
+toggleTvMode t = do
     send $ SendIR IROnce IRTV "KEY_AUX"
     send $ Sleep t
     send $ SendIR IROnce IRTV "KEY_AUX"
     send $ Sleep t
     send $ SendIR IROnce IRTV "KEY_OK"
-nextLightAndFlash :: Action
-nextLightAndFlash opts = do
+nextLightAndFlash :: NominalDiffTime -> Action
+nextLightAndFlash t = do
     send NextLight
     l <- send GetCurrentLight
     LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
     when wasOff $ send $ SetLightPower l True
-    send $ SetLightColour l opts.flashTime $ hsbk & #brightness %~ (`div` 2)
-    send $ Sleep opts.flashTime
-    send $ SetLightColour l opts.flashTime hsbk
+    send $ SetLightColour l t $ hsbk & #brightness %~ (`div` 2)
+    send $ Sleep t
+    send $ SetLightColour l t hsbk
     when wasOff $ send $ SetLightPower l False
 
 data KeyboardState = KeyboardState
@@ -406,8 +401,8 @@ data KeyboardState = KeyboardState
     , modeChangeState :: Maybe (Maybe Key)
     }
     deriving (Generic)
-dispatchKeys :: Evdev.EventData -> KeyboardState -> (AppState -> Maybe Event, KeyboardState)
-dispatchKeys event s@KeyboardState{..} = case modeChangeState of
+dispatchKeys :: Opts -> Evdev.EventData -> KeyboardState -> (AppState -> Maybe Event, KeyboardState)
+dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
     Just mk -> case event of
         KeyEvent KeyRightalt Released -> (,s & #modeChangeState .~ Nothing) case mk of
             Nothing -> \AppState{..} -> simpleAct $ SetMode previousMode
@@ -441,7 +436,7 @@ dispatchKeys event s@KeyboardState{..} = case modeChangeState of
             Normal -> case event of
                 KeyEvent KeyEsc Pressed | ctrl -> simpleAct Exit
                 KeyEvent KeyP Pressed -> if ctrl then simpleAct ToggleHifiPlug else act toggleHifi
-                KeyEvent KeyS Pressed -> act nextLightAndFlash
+                KeyEvent KeyS Pressed -> act $ nextLightAndFlash opts.flashTime
                 KeyEvent KeyVolumeup e -> irHold e IRHifi "KEY_VOLUMEUP"
                 KeyEvent KeyVolumedown e -> irHold e IRHifi "KEY_VOLUMEDOWN"
                 KeyEvent KeyMute Pressed -> irOnce IRHifi "muting"
