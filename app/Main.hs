@@ -354,43 +354,6 @@ toggleCurrentLight = do
     l <- send GetCurrentLight
     p <- send $ GetLightPower l
     send $ SetLightPower l $ not p
-getCurrentLightName :: Action Text
-getCurrentLightName = send . GetLightName =<< send GetCurrentLight
-modifyCurrentLightColour :: (HSBK -> HSBK) -> Action ()
-modifyCurrentLightColour f = do
-    l <- send GetCurrentLight
-    c <-
-        send GetLightColourCache >>= \case
-            Nothing -> do
-                c <- send $ GetLightColour l
-                send $ SetLightColourCache c
-                pure c
-            Just c -> pure c
-    let c' = f c
-    send $ SetLightColourCache c'
-    send $ SetLightColour l 0 c'
-toggleHifi :: Action ()
-toggleHifi = do
-    send $ SendIR IROnce IRHifi "KEY_POWER"
-    send $ Sleep 1
-    send $ SendIR IROnce IRHifi "KEY_TAPE"
-toggleTvMode :: NominalDiffTime -> Action ()
-toggleTvMode t = do
-    send $ SendIR IROnce IRTV "KEY_AUX"
-    send $ Sleep t
-    send $ SendIR IROnce IRTV "KEY_AUX"
-    send $ Sleep t
-    send $ SendIR IROnce IRTV "KEY_OK"
-nextLightAndFlash :: NominalDiffTime -> Action ()
-nextLightAndFlash t = do
-    send NextLight
-    l <- send GetCurrentLight
-    LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
-    when wasOff $ send $ SetLightPower l True
-    send $ SetLightColour l t $ hsbk & #brightness %~ (`div` 2)
-    send $ Sleep t
-    send $ SetLightColour l t hsbk
-    when wasOff $ send $ SetLightPower l False
 
 data KeyboardState = KeyboardState
     { shift :: Bool
@@ -433,8 +396,22 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
                 _ -> Nothing
             Normal -> case event of
                 KeyEvent KeyEsc Pressed | ctrl -> simpleAct Exit
-                KeyEvent KeyP Pressed -> if ctrl then simpleAct ToggleHifiPlug else act toggleHifi
-                KeyEvent KeyS Pressed -> act $ nextLightAndFlash opts.flashTime
+                KeyEvent KeyP Pressed ->
+                    if ctrl
+                        then simpleAct ToggleHifiPlug
+                        else act do
+                            send $ SendIR IROnce IRHifi "KEY_POWER"
+                            send $ Sleep 1
+                            send $ SendIR IROnce IRHifi "KEY_TAPE"
+                KeyEvent KeyS Pressed -> act do
+                    send NextLight
+                    l <- send GetCurrentLight
+                    LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
+                    when wasOff $ send $ SetLightPower l True
+                    send $ SetLightColour l opts.flashTime $ hsbk & #brightness %~ (`div` 2)
+                    send $ Sleep opts.flashTime
+                    send $ SetLightColour l opts.flashTime hsbk
+                    when wasOff $ send $ SetLightPower l False
                 KeyEvent KeyVolumeup e -> irHold e IRHifi "KEY_VOLUMEUP"
                 KeyEvent KeyVolumedown e -> irHold e IRHifi "KEY_VOLUMEDOWN"
                 KeyEvent KeyMute Pressed -> irOnce IRHifi "muting"
@@ -452,7 +429,14 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
                 KeyEvent KeyRightbrace e -> modifyLight e $ #kelvin %~ incrementLightField clampedAdd 9000 25
                 _ -> Nothing
             TV -> case event of
-                KeyEvent KeySpace Pressed -> act $ toggleTvMode if ctrl then 1 else 0.35
+                KeyEvent KeySpace Pressed -> act do
+                    send $ SendIR IROnce IRTV "KEY_AUX"
+                    send $ Sleep t
+                    send $ SendIR IROnce IRTV "KEY_AUX"
+                    send $ Sleep t
+                    send $ SendIR IROnce IRTV "KEY_OK"
+                  where
+                    t = if ctrl then 1 else 0.35
                 KeyEvent KeyP e -> irHold e IRTV "KEY_POWER"
                 KeyEvent Key1 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_1"
                 KeyEvent Key2 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_2"
@@ -503,6 +487,19 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
         Pressed -> act . modifyCurrentLightColour
         Repeated -> act . modifyCurrentLightColour
         Released -> const $ simpleAct UnsetLightColourCache
+      where
+        modifyCurrentLightColour f = do
+            l <- send GetCurrentLight
+            c <-
+                send GetLightColourCache >>= \case
+                    Nothing -> do
+                        c <- send $ GetLightColour l
+                        send $ SetLightColourCache c
+                        pure c
+                    Just c -> pure c
+            let c' = f c
+            send $ SetLightColourCache c'
+            send $ SetLightColour l 0 c'
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
 
 -- TODO re-evaluate this now that we have web API
@@ -520,7 +517,7 @@ webServer f =
         asum
             [ withGetRoute "reset-error" $ f2 $ simpleAction ResetError
             , withGetRoute "toggle-light" $ f2 toggleCurrentLight
-            , withGetRoute "light" $ f1 id getCurrentLightName
+            , withGetRoute "light" $ f1 id (send . GetLightName =<< send GetCurrentLight)
             ]
   where
     withGetRoute s x = Okapi.get >> seg s >> x
