@@ -186,11 +186,11 @@ main = do
                     LogEvent t -> logMessage t
                     ActionEvent f action ->
                         let Opts{..} = opts
-                        in (either handleError pure <=< runExceptT)
-                            . (logMessage . snd @() <=< runM)
-                            . (sendM . firstM (liftIO . f) <=< translate (runSimpleAction SimpleActionOpts{..}))
-                            . Eff.runWriter
-                            $ raise action
+                         in (either handleError pure <=< runExceptT)
+                                . (logMessage . snd @() <=< runM)
+                                . (sendM . firstM (liftIO . f) <=< translate (runSimpleAction SimpleActionOpts{..}))
+                                . Eff.runWriter
+                                $ raise action
                 )
                 . S.mapMaybeM gets
                 . (SK.toStream . SK.hoist liftIO . SK.fromStream)
