@@ -199,13 +199,13 @@ main = do
                 . S.append
                     ( -- flash all lights to show we have finished initialising
                       S.fromList
+                        . map (const . Just . ActionEvent . simpleAction)
+                        . intersperse (Sleep 0.4)
                         -- TODO we shouldn't have to actually set the mode - I only really want to flash the LED
                         -- but then there's no real harm, except that and that we have to repeat the initial states
                         -- and we don't display the red LED
                         -- and we'd quite like to set them all off briefly to make it clearer we've finished
                         -- anyway, easy to solve - just split apart `SetMode` so we have separate action for LEDs
-                        . map (const . Just . ActionEvent . simpleAction)
-                        . intersperse (Sleep 0.4)
                         . map SetMode
                         $ enumerate <> [initialState.previousMode, initialState.mode]
                     )
