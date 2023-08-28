@@ -215,6 +215,10 @@ data Event where
     LogEvent :: Text -> Event
     ErrorEvent :: Error -> Event
 
+type Action a = Eff '[SimpleAction] a
+simpleAction :: SimpleAction a -> Action a -- this is mostly to help with type inference
+simpleAction = send
+
 data SimpleAction a where
     Exit :: SimpleAction ()
     SetMode :: Mode -> SimpleAction ()
@@ -338,10 +342,6 @@ runSimpleAction opts@SimpleActionOpts{setLED {- TODO GHC doesn't yet support imp
         man <- use #httpConnectionManager
         response <- liftIO $ flip httpLbs man =<< parseRequest "http://192.168.1.114/rpc/Switch.Toggle?id=0"
         logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
-
-type Action a = Eff '[SimpleAction] a
-simpleAction :: SimpleAction a -> Action a -- this is mostly to help with type inference
-simpleAction = send
 
 data KeyboardState = KeyboardState
     { shift :: Bool
