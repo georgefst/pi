@@ -11,12 +11,8 @@ import Control.Monad.Except
 import Control.Monad.Freer
 import Control.Monad.Log (MonadLog, logMessage, runLoggingT)
 import Control.Monad.State.Strict
-import Data.Binary qualified as B
-import Data.Binary.Get (runGetOrFail)
-import Data.Binary.Get qualified as B
 import Data.Bool
 import Data.ByteString qualified as B
-import Data.ByteString.Lazy qualified as BSL
 import Data.Char (isSpace)
 import Data.Foldable
 import Data.List
@@ -208,10 +204,7 @@ main = do
                 . S.cons (const $ Just $ LogEvent "Starting...")
                 $ S.parList
                     id
-                    [ S.repeatM $
-                        const . Just . either (ErrorEvent . Error "Decode failure") (ActionEvent mempty) . decodeAction . BSL.fromStrict
-                            <$> recv eventSocket 4096
-                    , scanStream (KeyboardState False False False Nothing) (dispatchKeys opts)
+                    [ scanStream (KeyboardState False False False Nothing) (dispatchKeys opts)
                         . S.repeatM
                         $ Evdev.eventData <$> Evdev.nextEvent keyboard -- TODO use `evdev-streamly`
                     , S.repeatM $ const . Just <$> takeMVar eventMVar
@@ -501,15 +494,6 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
             send $ SetLightColourCache c'
             send $ SetLightColour l 0 c'
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
-
--- TODO re-evaluate this now that we have web API
-decodeAction :: BSL.ByteString -> Either (BSL.ByteString, B.ByteOffset, String) (Action ())
-decodeAction =
-    fmap thd3 . runGetOrFail do
-        B.get @Word8 >>= \case
-            0 -> pure $ simpleAction ResetError
-            1 -> pure toggleCurrentLight
-            n -> fail $ "unknown action ID: " <> show n
 
 webServer :: (forall m. (MonadIO m) => Event -> m ()) -> Wai.Application
 webServer f =
