@@ -495,23 +495,20 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
             send $ SetLightColour l 0 c'
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
 
+-- we only use this for actions which return a response
 webServer :: (forall m. (MonadIO m) => Event -> m ()) -> Wai.Application
 webServer f =
     makeOkapiApp id $
         asum
-            [ withGetRoute "reset-error" $ f2 $ simpleAction ResetError
-            , withGetRoute "toggle-light" $ f2 toggleCurrentLight
-            , withGetRoute "light" $ f1 id (send . GetLightName =<< send GetCurrentLight)
+            [ withGetRoute "light" $ f' id (send . GetLightName =<< send GetCurrentLight)
             ]
   where
     withGetRoute s x = Okapi.get >> seg s >> x
-    f1 :: (a -> Text) -> Action a -> OkapiT IO Result
-    f1 show' x = do
+    f' :: (a -> Text) -> Action a -> OkapiT IO Result
+    f' show' x = do
         m <- liftIO newEmptyMVar
         f $ ActionEvent (putMVar m) x
         okPlainText [] . (<> "\n") . show' =<< liftIO (takeMVar m)
-    f2 :: Action () -> OkapiT IO Result
-    f2 x = f (ActionEvent mempty x) >> noContent []
 
 warpSettings ::
     Warp.Port ->
