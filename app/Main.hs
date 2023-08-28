@@ -191,7 +191,7 @@ main = do
                 . S.append
                     ( -- flash all lights to show we have finished initialising
                       S.fromList
-                        . map (const . Just . ActionEvent mempty . simpleAction)
+                        . map (const . Just . ActionEvent mempty . send)
                         . intersperse (Sleep 0.4)
                         -- TODO we shouldn't have to actually set the mode - I only really want to flash the LED
                         -- but then there's no real harm, except that and that we have to repeat the initial states
@@ -216,8 +216,6 @@ data Event where
     ErrorEvent :: Error -> Event
 
 type Action a = Eff '[SimpleAction] a
-simpleAction :: SimpleAction a -> Action a -- this is mostly to help with type inference
-simpleAction = send
 
 data SimpleAction a where
     Exit :: SimpleAction ()
@@ -464,7 +462,7 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
         Pressed -> l .~ True
         Released -> l .~ False
         Repeated -> id
-    simpleAct = act . simpleAction
+    simpleAct = act . send
     act = Just . ActionEvent mempty
     irOnce = simpleAct .: SendIR IROnce
     irHold = \case
