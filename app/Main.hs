@@ -342,11 +342,6 @@ runSimpleAction opts@SimpleActionOpts{setLED {- TODO GHC doesn't yet support imp
 type Action a = Eff '[SimpleAction] a
 simpleAction :: SimpleAction a -> Action a -- this is mostly to help with type inference
 simpleAction = send
-toggleCurrentLight :: Action ()
-toggleCurrentLight = do
-    l <- send GetCurrentLight
-    p <- send $ GetLightPower l
-    send $ SetLightPower l $ not p
 
 data KeyboardState = KeyboardState
     { shift :: Bool
@@ -411,7 +406,10 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
                 KeyEvent KeyPlaypause Pressed -> simpleAct $ Mpris "PlayPause"
                 KeyEvent KeyPrevioussong Pressed -> simpleAct $ Mpris "Previous"
                 KeyEvent KeyNextsong Pressed -> simpleAct $ Mpris "Next"
-                KeyEvent KeyL Pressed -> act toggleCurrentLight
+                KeyEvent KeyL Pressed -> act do
+                    l <- send GetCurrentLight
+                    p <- send $ GetLightPower l
+                    send $ SetLightPower l $ not p
                 KeyEvent KeyLeft e -> modifyLight e $ #hue %~ subtract hueInterval
                 KeyEvent KeyRight e -> modifyLight e $ #hue %~ (+ hueInterval)
                 KeyEvent KeyMinus e -> modifyLight e $ #saturation %~ incrementLightField clampedSub minBound 256
