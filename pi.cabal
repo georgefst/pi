@@ -67,4 +67,5 @@ executable pi
         ViewPatterns
     ghc-options:
         -Wall
+        -Wredundant-constraints
         -threaded

@@ -526,7 +526,7 @@ webServer f =
             ]
   where
     withGetRoute s x = Okapi.get >> seg s >> x
-    f1 :: (Show a) => (a -> Text) -> ((a -> IO ()) -> Action) -> OkapiT IO Result
+    f1 :: (a -> Text) -> ((a -> IO ()) -> Action) -> OkapiT IO Result
     f1 show' x = do
         m <- liftIO newEmptyMVar
         f $ x $ putMVar m
