@@ -180,15 +180,15 @@ main = do
             (Just $ fromIntegral opts.lifxPort)
         $ do
             keyboard <- liftIO $ Evdev.newDevice "/dev/input/event3"
-            let opts' = opts & \Opts{..} -> SimpleActionOpts{..}
             S.fold
                 ( SF.drainMapM \case
                     ErrorEvent e -> handleError e
                     LogEvent t -> logMessage t
                     ActionEvent f action ->
-                        (either handleError pure <=< runExceptT)
+                        let Opts{..} = opts
+                        in (either handleError pure <=< runExceptT)
                             . (logMessage . snd @() <=< runM)
-                            . (sendM . firstM (liftIO . f) <=< translate (runSimpleAction opts'))
+                            . (sendM . firstM (liftIO . f) <=< translate (runSimpleAction SimpleActionOpts{..}))
                             . Eff.runWriter
                             $ raise action
                 )
