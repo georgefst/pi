@@ -183,7 +183,7 @@ main = do
                         let Opts{..} = opts
                          in (either handleError pure <=< runExceptT)
                                 . runM
-                                . (sendM . (liftIO . f) <=< translate (runSimpleAction SimpleActionOpts{..}))
+                                . (sendM . (liftIO . f) <=< translate (runAction ActionOpts{..}))
                                 $ action
                 )
                 . S.mapMaybeM gets
@@ -211,33 +211,33 @@ main = do
                     ]
 
 data Event where
-    ActionEvent :: (a -> IO ()) -> (Action a) -> Event
+    ActionEvent :: (a -> IO ()) -> (CompoundAction a) -> Event
     LogEvent :: Text -> Event
     ErrorEvent :: Error -> Event
 
-type Action a = Eff '[SimpleAction] a
+type CompoundAction a = Eff '[Action] a
 
-data SimpleAction a where
-    Exit :: SimpleAction ()
-    SetMode :: Mode -> SimpleAction ()
-    ResetError :: SimpleAction ()
-    Sleep :: NominalDiffTime -> SimpleAction ()
-    SendKey :: Key -> KeyEvent -> SimpleAction ()
-    GetCurrentLight :: SimpleAction Device
-    GetLightColourCache :: SimpleAction (Maybe HSBK)
-    SetLightColourCache :: HSBK -> SimpleAction ()
-    UnsetLightColourCache :: SimpleAction ()
-    NextLight :: SimpleAction ()
-    GetLightPower :: Device -> SimpleAction Bool
-    SetLightPower :: Device -> Bool -> SimpleAction ()
-    GetLightColour :: Device -> SimpleAction HSBK
-    SetLightColour :: Device -> NominalDiffTime -> HSBK -> SimpleAction ()
-    GetLightState :: Device -> SimpleAction LightState
-    GetLightName :: Device -> SimpleAction Text
-    Mpris :: Text -> SimpleAction ()
-    SendIR :: IRCmdType -> IRDev -> Text -> SimpleAction ()
-    ToggleHifiPlug :: SimpleAction ()
-deriving instance Show (SimpleAction a)
+data Action a where
+    Exit :: Action ()
+    SetMode :: Mode -> Action ()
+    ResetError :: Action ()
+    Sleep :: NominalDiffTime -> Action ()
+    SendKey :: Key -> KeyEvent -> Action ()
+    GetCurrentLight :: Action Device
+    GetLightColourCache :: Action (Maybe HSBK)
+    SetLightColourCache :: HSBK -> Action ()
+    UnsetLightColourCache :: Action ()
+    NextLight :: Action ()
+    GetLightPower :: Device -> Action Bool
+    SetLightPower :: Device -> Bool -> Action ()
+    GetLightColour :: Device -> Action HSBK
+    SetLightColour :: Device -> NominalDiffTime -> HSBK -> Action ()
+    GetLightState :: Device -> Action LightState
+    GetLightName :: Device -> Action Text
+    Mpris :: Text -> Action ()
+    SendIR :: IRCmdType -> IRDev -> Text -> Action ()
+    ToggleHifiPlug :: Action ()
+deriving instance Show (Action a)
 data IRDev
     = IRHifi
     | IRTV -- TODO move to separate module to avoid need for prefixes?
@@ -248,7 +248,7 @@ data IRCmdType
     | IRStop
     | IROnce
     deriving (Show)
-data SimpleActionOpts = SimpleActionOpts
+data ActionOpts = ActionOpts
     { ledErrorPin :: Int
     , keyboard :: Evdev.Device
     , modeLED :: Mode -> Maybe Int
@@ -257,12 +257,12 @@ data SimpleActionOpts = SimpleActionOpts
     , keySendIps :: [IP]
     }
 
-runSimpleAction ::
+runAction ::
     (MonadIO m, MonadState AppState m, MonadLifx m, MonadLog Text m, MonadError Error m) =>
-    SimpleActionOpts ->
-    SimpleAction a ->
+    ActionOpts ->
+    Action a ->
     m a
-runSimpleAction opts@SimpleActionOpts{setLED {- TODO GHC doesn't yet support impredicative fields -}} = \case
+runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative fields -}} = \case
     Exit -> liftIO exitSuccess
     SetMode new -> do
         old <- use #mode
@@ -494,7 +494,7 @@ webServer f =
             ]
   where
     withGetRoute s x = Okapi.get >> seg s >> x
-    f' :: (a -> Text) -> Action a -> OkapiT IO Result
+    f' :: (a -> Text) -> CompoundAction a -> OkapiT IO Result
     f' show' x = do
         m <- liftIO newEmptyMVar
         f $ ActionEvent (putMVar m) x
