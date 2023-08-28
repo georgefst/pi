@@ -180,11 +180,10 @@ main = do
                     ErrorEvent e -> handleError e
                     LogEvent t -> logMessage t
                     ActionEvent f action ->
-                        let Opts{..} = opts
-                         in (either handleError pure <=< runExceptT)
-                                . runM
-                                . (sendM . (liftIO . f) <=< translate (runAction ActionOpts{..}))
-                                $ action
+                        (either handleError pure <=< runExceptT)
+                            . runM
+                            . (sendM . (liftIO . f) <=< translate (runAction $ opts & \Opts{..} -> ActionOpts{..}))
+                            $ action
                 )
                 . S.mapMaybeM gets
                 . (SK.toStream . SK.hoist liftIO . SK.fromStream)
