@@ -349,7 +349,7 @@ runSimpleAction opts@SimpleActionOpts{setLED {- TODO GHC doesn't yet support imp
         logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
 
 type Action = forall m. (MonadIO m) => Eff [SimpleAction, m] ()
-simpleAction :: SimpleAction a -> Action
+simpleAction :: SimpleAction a -> Action -- this is mostly to help with type inference
 simpleAction a = void $ send a
 toggleCurrentLight :: Action
 toggleCurrentLight = do
