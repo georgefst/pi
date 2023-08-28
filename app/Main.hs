@@ -190,16 +190,9 @@ main = do
                             . subsumeFront
                             . translate (runSimpleAction (opts & \Opts{..} -> SimpleActionOpts{..}))
                             . Eff.runWriter
-                            $ do
-                                Eff.tell case action of
-                                    SimpleAction a _ -> showT a
-                                    ToggleCurrentLight -> "ToggleCurrentLight"
-                                    GetCurrentLightName _ -> "GetCurrentLightName"
-                                    ModifyCurrentLightColour _ -> "ModifyCurrentLightColour"
-                                    ToggleHifi -> "ToggleHifi"
-                                    ToggleTvMode _ -> "ToggleTvMode"
-                                    NextLightAndFlash -> "NextLightAndFlash"
-                                raise $ runAction (opts & \Opts{..} -> ActionOpts{..}) action
+                            . raise
+                            . action
+                            $ opts & \Opts{..} -> ActionOpts{..}
                 )
                 . S.mapMaybeM gets
                 . (SK.toStream . SK.hoist liftIO . SK.fromStream)
@@ -357,30 +350,21 @@ runSimpleAction opts@SimpleActionOpts{setLED {- TODO GHC doesn't yet support imp
         response <- liftIO $ flip httpLbs man =<< parseRequest "http://192.168.1.114/rpc/Switch.Toggle?id=0"
         logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
 
--- TODO unify IO callback functions - maybe `Action` should just have an output after all
--- or maybe we should just remove this type and use `Eff '[SimpleAction, m]` directly
-data Action where
-    SimpleAction :: SimpleAction a -> (a -> IO ()) -> Action
-    ToggleCurrentLight :: Action
-    GetCurrentLightName :: (Text -> IO ()) -> Action
-    ModifyCurrentLightColour :: (HSBK -> HSBK) -> Action
-    ToggleHifi :: Action
-    ToggleTvMode :: NominalDiffTime -> Action
-    NextLightAndFlash :: Action
+type Action = forall m. (MonadIO m) => ActionOpts -> Eff [SimpleAction, m] ()
 simpleAction :: SimpleAction a -> Action
-simpleAction = flip SimpleAction mempty
+simpleAction a = const $ void $ send a
 newtype ActionOpts = ActionOpts
     { flashTime :: NominalDiffTime
     }
-runAction :: (MonadIO m) => ActionOpts -> Action -> Eff '[SimpleAction, m] ()
-runAction opts = \case
-    SimpleAction a f -> liftIO . f =<< send a
-    ToggleCurrentLight -> do
+toggleCurrentLight :: Action
+toggleCurrentLight = const do
         l <- send GetCurrentLight
         p <- send $ GetLightPower l
         send $ SetLightPower l $ not p
-    GetCurrentLightName f -> liftIO . f =<< send . GetLightName =<< send GetCurrentLight
-    ModifyCurrentLightColour f -> do
+getCurrentLightName :: (Text -> IO ()) -> Action
+getCurrentLightName f = const $ liftIO . f =<< send . GetLightName =<< send GetCurrentLight
+modifyCurrentLightColour :: (HSBK -> HSBK) -> Action
+modifyCurrentLightColour f = const do
         l <- send GetCurrentLight
         c <-
             send GetLightColourCache >>= \case
@@ -392,17 +376,20 @@ runAction opts = \case
         let c' = f c
         send $ SetLightColourCache c'
         send $ SetLightColour l 0 c'
-    ToggleHifi -> do
+toggleHifi :: Action
+toggleHifi = const do
         send $ SendIR IROnce IRHifi "KEY_POWER"
         send $ Sleep 1
         send $ SendIR IROnce IRHifi "KEY_TAPE"
-    ToggleTvMode t -> do
+toggleTvMode :: NominalDiffTime -> Action
+toggleTvMode t = const do
         send $ SendIR IROnce IRTV "KEY_AUX"
         send $ Sleep t
         send $ SendIR IROnce IRTV "KEY_AUX"
         send $ Sleep t
         send $ SendIR IROnce IRTV "KEY_OK"
-    NextLightAndFlash -> do
+nextLightAndFlash :: Action
+nextLightAndFlash opts = do
         send NextLight
         l <- send GetCurrentLight
         LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
@@ -453,15 +440,15 @@ dispatchKeys event s@KeyboardState{..} = case modeChangeState of
                 _ -> Nothing
             Normal -> case event of
                 KeyEvent KeyEsc Pressed | ctrl -> simpleAct Exit
-                KeyEvent KeyP Pressed -> if ctrl then simpleAct ToggleHifiPlug else act ToggleHifi
-                KeyEvent KeyS Pressed -> act NextLightAndFlash
+                KeyEvent KeyP Pressed -> if ctrl then simpleAct ToggleHifiPlug else act toggleHifi
+                KeyEvent KeyS Pressed -> act nextLightAndFlash
                 KeyEvent KeyVolumeup e -> irHold e IRHifi "KEY_VOLUMEUP"
                 KeyEvent KeyVolumedown e -> irHold e IRHifi "KEY_VOLUMEDOWN"
                 KeyEvent KeyMute Pressed -> irOnce IRHifi "muting"
                 KeyEvent KeyPlaypause Pressed -> simpleAct $ Mpris "PlayPause"
                 KeyEvent KeyPrevioussong Pressed -> simpleAct $ Mpris "Previous"
                 KeyEvent KeyNextsong Pressed -> simpleAct $ Mpris "Next"
-                KeyEvent KeyL Pressed -> act ToggleCurrentLight
+                KeyEvent KeyL Pressed -> act toggleCurrentLight
                 KeyEvent KeyLeft e -> modifyLight e $ #hue %~ subtract hueInterval
                 KeyEvent KeyRight e -> modifyLight e $ #hue %~ (+ hueInterval)
                 KeyEvent KeyMinus e -> modifyLight e $ #saturation %~ incrementLightField clampedSub minBound 256
@@ -472,7 +459,7 @@ dispatchKeys event s@KeyboardState{..} = case modeChangeState of
                 KeyEvent KeyRightbrace e -> modifyLight e $ #kelvin %~ incrementLightField clampedAdd 9000 25
                 _ -> Nothing
             TV -> case event of
-                KeyEvent KeySpace Pressed -> act $ ToggleTvMode if ctrl then 1 else 0.35
+                KeyEvent KeySpace Pressed -> act $ toggleTvMode if ctrl then 1 else 0.35
                 KeyEvent KeyP e -> irHold e IRTV "KEY_POWER"
                 KeyEvent Key1 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_1"
                 KeyEvent Key2 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_2"
@@ -520,8 +507,8 @@ dispatchKeys event s@KeyboardState{..} = case modeChangeState of
     clampedAdd m a b = b + min (m - b) a -- TODO better implementation? maybe in library? else, this is presumably commutative in last two args (ditto below)
     clampedSub m a b = b - min (b - m) a
     modifyLight = \case
-        Pressed -> act . ModifyCurrentLightColour
-        Repeated -> act . ModifyCurrentLightColour
+        Pressed -> act . modifyCurrentLightColour
+        Repeated -> act . modifyCurrentLightColour
         Released -> const $ simpleAct UnsetLightColourCache
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
 
@@ -531,7 +518,7 @@ decodeAction =
     fmap thd3 . runGetOrFail do
         B.get @Word8 >>= \case
             0 -> pure $ simpleAction ResetError
-            1 -> pure ToggleCurrentLight
+            1 -> pure toggleCurrentLight
             n -> fail $ "unknown action ID: " <> show n
 
 webServer :: (forall m. (MonadIO m) => Action -> m ()) -> Wai.Application
@@ -539,8 +526,8 @@ webServer f =
     makeOkapiApp id $
         asum
             [ withGetRoute "reset-error" $ f2 $ simpleAction ResetError
-            , withGetRoute "toggle-light" $ f2 ToggleCurrentLight
-            , withGetRoute "light" $ f1 id GetCurrentLightName
+            , withGetRoute "toggle-light" $ f2 toggleCurrentLight
+            , withGetRoute "light" $ f1 id getCurrentLightName
             ]
   where
     withGetRoute s x = Okapi.get >> seg s >> x
@@ -549,6 +536,7 @@ webServer f =
         m <- liftIO newEmptyMVar
         f $ x $ putMVar m
         okPlainText [] . (<> "\n") . show' =<< liftIO (takeMVar m)
+    f2 :: Action -> OkapiT IO Result
     f2 x = f x >> noContent []
 
 warpSettings ::
