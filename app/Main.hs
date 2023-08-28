@@ -474,20 +474,17 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
     hueInterval = 16 * if ctrl then 16 else if shift then 4 else 1
     clampedAdd m a b = b + min (m - b) a -- TODO better implementation? maybe in library? else, this is presumably commutative in last two args (ditto below)
     clampedSub m a b = b - min (b - m) a
-    modifyLight = \case
-        Pressed -> act . modifyCurrentLightColour
-        Repeated -> act . modifyCurrentLightColour
-        Released -> const $ simpleAct UnsetLightColourCache
+    modifyLight e f = act do
+        l <- send GetCurrentLight
+        case e of
+            Pressed -> cacheAndSet l . f =<< send (GetLightColour l)
+            -- the `Nothing` case here shouldn't actually happen - we can assume cache is set by last key event
+            Repeated -> cacheAndSet l . f =<< maybe (send $ GetLightColour l) pure =<< send GetLightColourCache
+            Released -> send UnsetLightColourCache
       where
-        modifyCurrentLightColour f = do
-            l <- send GetCurrentLight
-            c <-
-                send GetLightColourCache >>= \case
-                    Nothing -> send $ GetLightColour l
-                    Just c -> pure c
-            let c' = f c
-            send $ SetLightColourCache c'
-            send $ SetLightColour l 0 c'
+        cacheAndSet l c = do
+            send $ SetLightColourCache c
+            send $ SetLightColour l 0 c
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
 
 -- we only use this for actions which return a response
