@@ -9,7 +9,6 @@ import Control.Concurrent.Async
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Freer
-import Control.Monad.Freer.Writer qualified as Eff
 import Control.Monad.Log (MonadLog, logMessage, runLoggingT)
 import Control.Monad.State.Strict
 import Data.Binary qualified as B
@@ -187,10 +186,9 @@ main = do
                     ActionEvent f action ->
                         let Opts{..} = opts
                          in (either handleError pure <=< runExceptT)
-                                . (logMessage . snd @() <=< runM)
-                                . (sendM . firstM (liftIO . f) <=< translate (runSimpleAction SimpleActionOpts{..}))
-                                . Eff.runWriter
-                                $ raise action
+                                . runM
+                                . (sendM . (liftIO . f) <=< translate (runSimpleAction SimpleActionOpts{..}))
+                                $ action
                 )
                 . S.mapMaybeM gets
                 . (SK.toStream . SK.hoist liftIO . SK.fromStream)
