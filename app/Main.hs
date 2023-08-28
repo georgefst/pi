@@ -358,46 +358,46 @@ newtype ActionOpts = ActionOpts
     }
 toggleCurrentLight :: Action
 toggleCurrentLight = const do
-        l <- send GetCurrentLight
-        p <- send $ GetLightPower l
-        send $ SetLightPower l $ not p
+    l <- send GetCurrentLight
+    p <- send $ GetLightPower l
+    send $ SetLightPower l $ not p
 getCurrentLightName :: (Text -> IO ()) -> Action
 getCurrentLightName f = const $ liftIO . f =<< send . GetLightName =<< send GetCurrentLight
 modifyCurrentLightColour :: (HSBK -> HSBK) -> Action
 modifyCurrentLightColour f = const do
-        l <- send GetCurrentLight
-        c <-
-            send GetLightColourCache >>= \case
-                Nothing -> do
-                    c <- send $ GetLightColour l
-                    send $ SetLightColourCache c
-                    pure c
-                Just c -> pure c
-        let c' = f c
-        send $ SetLightColourCache c'
-        send $ SetLightColour l 0 c'
+    l <- send GetCurrentLight
+    c <-
+        send GetLightColourCache >>= \case
+            Nothing -> do
+                c <- send $ GetLightColour l
+                send $ SetLightColourCache c
+                pure c
+            Just c -> pure c
+    let c' = f c
+    send $ SetLightColourCache c'
+    send $ SetLightColour l 0 c'
 toggleHifi :: Action
 toggleHifi = const do
-        send $ SendIR IROnce IRHifi "KEY_POWER"
-        send $ Sleep 1
-        send $ SendIR IROnce IRHifi "KEY_TAPE"
+    send $ SendIR IROnce IRHifi "KEY_POWER"
+    send $ Sleep 1
+    send $ SendIR IROnce IRHifi "KEY_TAPE"
 toggleTvMode :: NominalDiffTime -> Action
 toggleTvMode t = const do
-        send $ SendIR IROnce IRTV "KEY_AUX"
-        send $ Sleep t
-        send $ SendIR IROnce IRTV "KEY_AUX"
-        send $ Sleep t
-        send $ SendIR IROnce IRTV "KEY_OK"
+    send $ SendIR IROnce IRTV "KEY_AUX"
+    send $ Sleep t
+    send $ SendIR IROnce IRTV "KEY_AUX"
+    send $ Sleep t
+    send $ SendIR IROnce IRTV "KEY_OK"
 nextLightAndFlash :: Action
 nextLightAndFlash opts = do
-        send NextLight
-        l <- send GetCurrentLight
-        LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
-        when wasOff $ send $ SetLightPower l True
-        send $ SetLightColour l opts.flashTime $ hsbk & #brightness %~ (`div` 2)
-        send $ Sleep opts.flashTime
-        send $ SetLightColour l opts.flashTime hsbk
-        when wasOff $ send $ SetLightPower l False
+    send NextLight
+    l <- send GetCurrentLight
+    LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
+    when wasOff $ send $ SetLightPower l True
+    send $ SetLightColour l opts.flashTime $ hsbk & #brightness %~ (`div` 2)
+    send $ Sleep opts.flashTime
+    send $ SetLightColour l opts.flashTime hsbk
+    when wasOff $ send $ SetLightPower l False
 
 data KeyboardState = KeyboardState
     { shift :: Bool
