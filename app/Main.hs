@@ -301,7 +301,7 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
     LightReScan ->
         maybe
             (logMessage "No LIFX devices found during re-scan - retaining old list")
-            (\ds -> #lifxDevices .= Stream.cycle ds)
+            (\ds -> #lifxDevices .= Stream.cycle ds >> logMessage ("LIFX devices found: " <> showT (toList ds)))
             . nonEmpty
             =<< discoverLifx
     NextLight -> #lifxDevices %= Stream.tail
