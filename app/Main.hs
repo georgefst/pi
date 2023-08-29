@@ -548,7 +548,7 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
             send $ SetLightColourCache c
             send $ SetLightColour l 0 c
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
-    startSpotifySearch t = (const [], s & #typing ?~ (TypingSpotifySearch t, []))
+    startSpotifySearch t = (const [LogEvent "Waiting for keyboard input"], s & #typing ?~ (TypingSpotifySearch t, []))
 
 -- we only use this for actions which return a response
 webServer :: (forall m. (MonadIO m) => Event -> m ()) -> Wai.Application
