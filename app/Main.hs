@@ -179,11 +179,11 @@ main = do
                 ( SF.drainMapM \case
                     ErrorEvent e -> handleError e
                     LogEvent t -> logMessage t
-                    ActionEvent f action ->
-                        (either handleError pure <=< runExceptT)
-                            . runM
-                            . (sendM . (liftIO . f) <=< translate (runAction $ opts & \Opts{..} -> ActionOpts{..}))
-                            $ action
+                    ActionEvent f action -> (either handleError pure <=< runExceptT) $ runM do
+                        r <-
+                            action & translate \a -> do
+                                runAction (opts & \Opts{..} -> ActionOpts{..}) a
+                        sendM . liftIO $ f r
                 )
                 . S.mapMaybeM gets
                 . (SK.toStream . SK.hoist liftIO . SK.fromStream)
