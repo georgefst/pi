@@ -11,6 +11,7 @@ import Control.Monad.Except
 import Control.Monad.Freer
 import Control.Monad.Log (MonadLog, logMessage, runLoggingT)
 import Control.Monad.State.Strict
+import Data.Bifunctor
 import Data.Bool
 import Data.ByteString qualified as B
 import Data.Char (isSpace)
@@ -403,8 +404,9 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
     KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
     KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
     KeyEvent KeyEnter Pressed | Just (t, ks) <- typing -> (,s & #typing .~ Nothing) \AppState{} ->
-        act $ ($ T.pack $ mapMaybe (keyToChar shift) $ reverse ks) case t of
-            TypingSpotifySearch searchType -> send . SpotifySearchAndPlay searchType
+        let (text, _badKeys) = bimap (T.pack . mapMaybe fst) (map snd) $ partition (isJust . fst) $ map (\k -> (keyToChar shift k, k)) $ reverse ks
+         in case t of
+                TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
     KeyEvent k Pressed | Just (t, ks) <- typing -> (const Nothing, s & #typing ?~ (t, k : ks))
     _ | Just mk <- modeChangeState -> case event of
         KeyEvent KeyRightalt Released -> (,s & #modeChangeState .~ Nothing) case mk of
