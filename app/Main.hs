@@ -20,6 +20,7 @@ import Data.List.Extra
 import Data.List.NonEmpty (nonEmpty)
 import Data.Map (Map)
 import Data.Map qualified as Map
+import Data.Maybe
 import Data.Stream.Infinite qualified as Stream
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
@@ -29,6 +30,7 @@ import Data.Word
 import Evdev (EventData (KeyEvent), KeyEvent (..))
 import Evdev qualified
 import Evdev.Codes (Key (..))
+import GHC.Records (HasField)
 import Lifx.Lan hiding (SetLightPower)
 import Network.HTTP.Client
 import Network.HTTP.Types
@@ -36,11 +38,18 @@ import Network.Socket
 import Network.Socket.ByteString hiding (send)
 import Network.Wai qualified as Wai
 import Network.Wai.Handler.Warp qualified as Warp
-import Okapi hiding (Event, error, get)
-import Okapi qualified
+import Okapi hiding (Event, error, get, head)
+import Okapi qualified hiding (head)
 import Optics
 import Optics.State.Operators
 import Options.Generic
+import Spotify qualified
+import Spotify.Servant.Player qualified as Spotify
+import Spotify.Types.Artists qualified as Spotify
+import Spotify.Types.Misc qualified as Spotify
+import Spotify.Types.Search qualified as Spotify
+import Spotify.Types.Simple qualified as Spotify
+import Spotify.Types.Tracks qualified as Spotify
 import Streamly.Data.Fold qualified as SF
 import Streamly.Data.Stream qualified as S
 import Streamly.Data.Stream.Prelude qualified as S
@@ -65,6 +74,7 @@ data Opts = Opts
     , lifxPort :: Word16
     , udpPort :: Word16
     , httpPort :: Warp.Port
+    , spotifyDeviceId :: Spotify.DeviceID
     , keySendPort :: PortNumber
     , keySendIps :: [IP]
     }
@@ -206,7 +216,7 @@ main = do
                 $ S.parList
                     id
                     [ scanStream
-                        (KeyboardState False False False Nothing)
+                        (KeyboardState False False False Nothing Nothing)
                         (dispatchKeys $ opts & \Opts{..} -> KeyboardOpts{..})
                         . S.repeatM
                         $ Evdev.eventData <$> Evdev.nextEvent keyboard -- TODO use `evdev-streamly`
@@ -241,6 +251,7 @@ data Action a where
     Mpris :: Text -> Action ()
     SendIR :: IRCmdType -> IRDev -> Text -> Action ()
     ToggleHifiPlug :: Action ()
+    SpotifySearchAndPlay :: Spotify.SearchType -> Text -> Action ()
 deriving instance Show (Action a)
 data IRDev
     = IRHifi
@@ -258,6 +269,7 @@ data ActionOpts = ActionOpts
     , keyboard :: Evdev.Device
     , modeLED :: Mode -> Maybe Int
     , setLED :: forall m. (MonadState AppState m, MonadIO m) => Int -> Bool -> m ()
+    , spotifyDeviceId :: Spotify.DeviceID
     , keySendPort :: PortNumber
     , keySendIps :: [IP]
     }
@@ -350,6 +362,24 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         man <- use #httpConnectionManager
         response <- liftIO $ flip httpLbs man =<< parseRequest "http://192.168.1.114/rpc/Switch.Toggle?id=0"
         logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
+    SpotifySearchAndPlay searchType query -> do
+        r <- liftIO $ Spotify.search query [searchType] Nothing Nothing Spotify.noPagingParams
+        u <- maybe (throwError $ SimpleError "No Spotify entries") pure case searchType of
+            -- TODO improve library to support all search types properly
+            Spotify.AlbumSearch -> getURI r.albums
+            Spotify.ArtistSearch -> getURI r.artists
+            Spotify.PlaylistSearch -> getURI r.playlists
+            Spotify.TrackSearch -> getURI r.tracks
+            _ -> Nothing
+        -- Spotify.ShowSearch -> fmap (.uri) . listToMaybe . (.items ) =<< r.shows
+        -- Spotify.EpisodeSearch -> fmap (.uri) . listToMaybe . (.items ) =<< r.episodes
+        -- Spotify.AudiobookSearch -> fmap (.uri) . listToMaybe . (.items ) =<< r.audiobooks
+        liftIO
+            . Spotify.startPlayback (Just opts.spotifyDeviceId)
+            $ Spotify.StartPlaybackOpts Nothing (Just [u]) Nothing
+      where
+        getURI :: (HasField "uri" a b) => Maybe (Spotify.Paging a) -> Maybe b
+        getURI = (fmap (.uri) . listToMaybe . (.items) =<<)
 
 newtype KeyboardOpts = KeyboardOpts
     { flashTime :: NominalDiffTime
@@ -360,10 +390,26 @@ data KeyboardState = KeyboardState
     , ctrl :: Bool
     , alt :: Bool
     , modeChangeState :: Maybe (Maybe Key)
+    , typing :: Maybe (TypingReason, [Key])
     }
     deriving (Generic)
+newtype TypingReason
+    = TypingSpotifySearch Spotify.SearchType
 dispatchKeys :: KeyboardOpts -> Evdev.EventData -> KeyboardState -> (AppState -> Maybe Event, KeyboardState)
-dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
+dispatchKeys opts event s@KeyboardState{..} =
+ case event of
+  KeyEvent KeyL Pressed | ctrl && shift -> startSpotifySearch Spotify.AlbumSearch
+  KeyEvent KeyA Pressed | ctrl && shift -> startSpotifySearch Spotify.ArtistSearch
+  KeyEvent KeyP Pressed | ctrl && shift -> startSpotifySearch Spotify.PlaylistSearch
+  KeyEvent KeyS Pressed | ctrl && shift -> startSpotifySearch Spotify.TrackSearch
+  KeyEvent KeyW Pressed | ctrl && shift -> startSpotifySearch Spotify.ShowSearch
+  KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
+  KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
+  KeyEvent KeyEnter Pressed | Just (t, ks) <- typing -> (,s & #typing .~ Nothing) \AppState{} ->
+    act $ ($ T.pack $ mapMaybe (keyToChar shift) $ reverse ks) case t of
+        TypingSpotifySearch searchType -> send . SpotifySearchAndPlay searchType
+  KeyEvent k Pressed | Just (t, ks) <- typing -> (const Nothing, s & #typing ?~ (t, k : ks))
+  _ -> case modeChangeState of
     Just mk -> case event of
         KeyEvent KeyRightalt Released -> (,s & #modeChangeState .~ Nothing) case mk of
             Nothing -> \AppState{..} -> simpleAct $ SetMode previousMode
@@ -499,6 +545,7 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
             send $ SetLightColourCache c
             send $ SetLightColour l 0 c
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
+    startSpotifySearch t = (const Nothing, s & #typing ?~ (TypingSpotifySearch t, []))
 
 -- we only use this for actions which return a response
 webServer :: (forall m. (MonadIO m) => Event -> m ()) -> Wai.Application

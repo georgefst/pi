@@ -13,9 +13,11 @@ import Data.List.Extra
 import Data.Text qualified as T
 import Data.Text.Encoding hiding (Some)
 import Data.Time (NominalDiffTime, nominalDiffTimeToSeconds)
+import Evdev.Codes qualified as Evdev
 import Network.Socket
 import Options.Generic
 import RawFilePath
+import Spotify.Types.Misc qualified as Spotify
 import Streamly.Data.Stream qualified as S
 import System.Exit
 
@@ -80,5 +82,115 @@ deriving anyclass instance ParseFields NominalDiffTime
 instance ParseRecord NominalDiffTime where
     parseRecord = fmap getOnly parseRecord
 
+-- this seems to be the minimum boilerplate needed to just inherit the instance for `Text`
+instance ParseField Spotify.DeviceID where
+    parseField a b c d = Spotify.DeviceID <$> parseField a b c d
+    readField = Spotify.DeviceID <$> readField
+instance ParseFields Spotify.DeviceID
+instance ParseRecord Spotify.DeviceID where
+    parseRecord = fmap getOnly parseRecord
+
 threadDelay' :: NominalDiffTime -> IO ()
 threadDelay' = threadDelay . round . (* 1_000_000) . nominalDiffTimeToSeconds
+
+-- bool indicates whether shift held
+-- TODO make this more complete and general and less anglocentric...
+keyToChar :: Bool -> Evdev.Key -> Maybe Char
+keyToChar = curry \case
+    (False, Evdev.KeyMinus) -> Just '-'
+    (False, Evdev.KeyEqual) -> Just '='
+    (False, Evdev.KeyLeftbrace) -> Just '['
+    (False, Evdev.KeyRightbrace) -> Just ']'
+    (False, Evdev.KeySemicolon) -> Just ';'
+    (False, Evdev.KeyApostrophe) -> Just '\''
+    (False, Evdev.KeyGrave) -> Just '#'
+    (False, Evdev.KeyBackslash) -> Just '\\'
+    (False, Evdev.KeyComma) -> Just ','
+    (False, Evdev.KeyDot) -> Just '.'
+    (False, Evdev.KeySlash) -> Just '/'
+    (False, Evdev.KeySpace) -> Just ' '
+    (False, Evdev.Key1) -> Just '1'
+    (False, Evdev.Key2) -> Just '2'
+    (False, Evdev.Key3) -> Just '3'
+    (False, Evdev.Key4) -> Just '4'
+    (False, Evdev.Key5) -> Just '5'
+    (False, Evdev.Key6) -> Just '6'
+    (False, Evdev.Key7) -> Just '7'
+    (False, Evdev.Key8) -> Just '8'
+    (False, Evdev.Key9) -> Just '9'
+    (False, Evdev.Key0) -> Just '0'
+    (False, Evdev.KeyA) -> Just 'a'
+    (False, Evdev.KeyB) -> Just 'b'
+    (False, Evdev.KeyC) -> Just 'c'
+    (False, Evdev.KeyD) -> Just 'd'
+    (False, Evdev.KeyE) -> Just 'e'
+    (False, Evdev.KeyF) -> Just 'f'
+    (False, Evdev.KeyG) -> Just 'g'
+    (False, Evdev.KeyH) -> Just 'h'
+    (False, Evdev.KeyI) -> Just 'i'
+    (False, Evdev.KeyJ) -> Just 'j'
+    (False, Evdev.KeyK) -> Just 'k'
+    (False, Evdev.KeyL) -> Just 'l'
+    (False, Evdev.KeyM) -> Just 'm'
+    (False, Evdev.KeyN) -> Just 'n'
+    (False, Evdev.KeyO) -> Just 'o'
+    (False, Evdev.KeyP) -> Just 'p'
+    (False, Evdev.KeyQ) -> Just 'q'
+    (False, Evdev.KeyR) -> Just 'r'
+    (False, Evdev.KeyS) -> Just 's'
+    (False, Evdev.KeyT) -> Just 't'
+    (False, Evdev.KeyU) -> Just 'u'
+    (False, Evdev.KeyV) -> Just 'v'
+    (False, Evdev.KeyW) -> Just 'w'
+    (False, Evdev.KeyX) -> Just 'x'
+    (False, Evdev.KeyY) -> Just 'y'
+    (False, Evdev.KeyZ) -> Just 'z'
+    (False, Evdev.KeyTab) -> Just '\t'
+    (True, Evdev.KeyMinus) -> Just '_'
+    (True, Evdev.KeyEqual) -> Just '+'
+    (True, Evdev.KeyLeftbrace) -> Just '{'
+    (True, Evdev.KeyRightbrace) -> Just '}'
+    (True, Evdev.KeySemicolon) -> Just ':'
+    (True, Evdev.KeyApostrophe) -> Just '@'
+    (True, Evdev.KeyGrave) -> Just '~'
+    (True, Evdev.KeyBackslash) -> Just '|'
+    (True, Evdev.KeyComma) -> Just '<'
+    (True, Evdev.KeyDot) -> Just '>'
+    (True, Evdev.KeySlash) -> Just '?'
+    (True, Evdev.Key1) -> Just '!'
+    (True, Evdev.Key2) -> Just '"'
+    (True, Evdev.Key3) -> Just '£'
+    (True, Evdev.Key4) -> Just '$'
+    (True, Evdev.Key5) -> Just '%'
+    (True, Evdev.Key6) -> Just '^'
+    (True, Evdev.Key7) -> Just '&'
+    (True, Evdev.Key8) -> Just '*'
+    (True, Evdev.Key9) -> Just '('
+    (True, Evdev.Key0) -> Just ')'
+    (True, Evdev.KeyA) -> Just 'A'
+    (True, Evdev.KeyB) -> Just 'B'
+    (True, Evdev.KeyC) -> Just 'C'
+    (True, Evdev.KeyD) -> Just 'D'
+    (True, Evdev.KeyE) -> Just 'E'
+    (True, Evdev.KeyF) -> Just 'F'
+    (True, Evdev.KeyG) -> Just 'G'
+    (True, Evdev.KeyH) -> Just 'H'
+    (True, Evdev.KeyI) -> Just 'I'
+    (True, Evdev.KeyJ) -> Just 'J'
+    (True, Evdev.KeyK) -> Just 'K'
+    (True, Evdev.KeyL) -> Just 'L'
+    (True, Evdev.KeyM) -> Just 'M'
+    (True, Evdev.KeyN) -> Just 'N'
+    (True, Evdev.KeyO) -> Just 'O'
+    (True, Evdev.KeyP) -> Just 'P'
+    (True, Evdev.KeyQ) -> Just 'Q'
+    (True, Evdev.KeyR) -> Just 'R'
+    (True, Evdev.KeyS) -> Just 'S'
+    (True, Evdev.KeyT) -> Just 'T'
+    (True, Evdev.KeyU) -> Just 'U'
+    (True, Evdev.KeyV) -> Just 'V'
+    (True, Evdev.KeyW) -> Just 'W'
+    (True, Evdev.KeyX) -> Just 'X'
+    (True, Evdev.KeyY) -> Just 'Y'
+    (True, Evdev.KeyZ) -> Just 'Z'
+    _ -> Nothing

@@ -26,9 +26,16 @@ source-repository-package
     subdir: wai-logger
     tag: cc1ec1d8e6700b66b1b1c037694e962311d165b8
 
+-- not yet on Hackage
+source-repository-package
+    type: git
+    location: https://github.com/georgefst/spotify
+    tag: dec21accb7466bd20ede861c38a0ae3153e3e4ba
+
 allow-newer:
     -- https://github.com/lexi-lambda/freer-simple/pull/44
     freer-simple:template-haskell,
     okapi:*,
     evdev-streamly:streamly,
     streamly-fsnotify:streamly,
+    servant-lucid:servant,
