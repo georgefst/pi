@@ -182,7 +182,9 @@ main = do
                     ActionEvent f action -> (either handleError pure <=< runExceptT) $ runM do
                         r <-
                             action & translate \a -> do
+                                logMessage $ showT a
                                 runAction (opts & \Opts{..} -> ActionOpts{..}) a
+                        sendM . logMessage $ showT r
                         sendM . liftIO $ f r
                 )
                 . S.mapMaybeM gets
@@ -212,7 +214,7 @@ main = do
                     ]
 
 data Event where
-    ActionEvent :: (a -> IO ()) -> (CompoundAction a) -> Event
+    ActionEvent :: (Show a) => (a -> IO ()) -> (CompoundAction a) -> Event
     LogEvent :: Text -> Event
     ErrorEvent :: Error -> Event
 
@@ -507,7 +509,7 @@ webServer f =
             ]
   where
     withGetRoute s x = Okapi.get >> seg s >> x
-    f' :: (a -> Text) -> CompoundAction a -> OkapiT IO Result
+    f' :: (Show a) => (a -> Text) -> CompoundAction a -> OkapiT IO Result
     f' show' x = do
         m <- liftIO newEmptyMVar
         f $ ActionEvent (putMVar m) x
