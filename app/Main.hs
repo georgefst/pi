@@ -30,7 +30,6 @@ import Data.Word
 import Evdev (EventData (KeyEvent), KeyEvent (..))
 import Evdev qualified
 import Evdev.Codes (Key (..))
-import GHC.Records (HasField)
 import Lifx.Lan hiding (SetLightPower)
 import Network.HTTP.Client
 import Network.HTTP.Types
@@ -378,7 +377,6 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
             . Spotify.startPlayback (Just opts.spotifyDeviceId)
             $ Spotify.StartPlaybackOpts Nothing (Just [u]) Nothing
       where
-        getURI :: (HasField "uri" a b) => Maybe (Spotify.Paging a) -> Maybe b
         getURI = (fmap (.uri) . listToMaybe . (.items) =<<)
 
 newtype KeyboardOpts = KeyboardOpts
