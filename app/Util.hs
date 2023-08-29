@@ -93,6 +93,9 @@ instance ParseRecord Spotify.DeviceID where
 threadDelay' :: NominalDiffTime -> IO ()
 threadDelay' = threadDelay . round . (* 1_000_000) . nominalDiffTimeToSeconds
 
+mwhen :: (Monoid p) => Bool -> p -> p
+mwhen b x = if b then x else mempty
+
 -- bool indicates whether shift held
 -- TODO make this more complete and general and less anglocentric...
 keyToChar :: Bool -> Evdev.Key -> Maybe Char

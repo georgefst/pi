@@ -405,9 +405,11 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
     KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
     KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
     KeyEvent KeyEnter Pressed | Just (t, ks) <- typing -> (,s & #typing .~ Nothing) \AppState{} ->
-        let (text, _badKeys) = bimap (T.pack . mapMaybe fst) (map snd) $ partition (isJust . fst) $ map (\k -> (keyToChar shift k, k)) $ reverse ks
+        let (text, badKeys) = bimap (T.pack . mapMaybe fst) (map snd) $ partition (isJust . fst) $ map (\k -> (keyToChar shift k, k)) $ reverse ks
          in case t of
-                TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
+                TypingSpotifySearch searchType ->
+                    mwhen (notNull badKeys) [LogEvent $ "Ignoring non-character keypresses: " <> showT badKeys]
+                        <> act (send $ SpotifySearchAndPlay searchType text)
     KeyEvent k Pressed | Just (t, ks) <- typing -> (const [], s & #typing ?~ (t, k : ks))
     _ | Just mk <- modeChangeState -> case event of
         KeyEvent KeyRightalt Released -> (,s & #modeChangeState .~ Nothing) case mk of
