@@ -11,7 +11,6 @@ import Control.Monad.Except
 import Control.Monad.Freer
 import Control.Monad.Log (MonadLog, logMessage, runLoggingT)
 import Control.Monad.State.Strict
-import Data.Bifunctor
 import Data.Bool
 import Data.ByteString qualified as B
 import Data.Char (isSpace)
@@ -390,7 +389,7 @@ data KeyboardState = KeyboardState
     , ctrl :: Bool
     , alt :: Bool
     , modeChangeState :: Maybe (Maybe Key)
-    , typing :: Maybe (TypingReason, [(Key, Bool)])
+    , typing :: Maybe (TypingReason, [Char])
     }
     deriving (Generic)
 newtype TypingReason
@@ -404,17 +403,16 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
     KeyEvent KeyW Pressed | ctrl && shift -> startSpotifySearch Spotify.ShowSearch
     KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
     KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
-    KeyEvent KeyEnter Pressed | Just (t, ks) <- typing -> (,s & #typing .~ Nothing) \AppState{} ->
-        let (text, badKeys) =
-                bimap (T.pack . mapMaybe fst3) (map $ snd3 &&& thd3)
-                    . partition (isJust . fst3)
-                    . map (\(k, shift') -> (keyToChar shift' k, k, shift'))
-                    $ reverse ks
+    KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> (,s & #typing .~ Nothing) \AppState{} ->
+        let text = T.pack $ reverse cs
          in case t of
-                TypingSpotifySearch searchType ->
-                    mwhen (notNull badKeys) [LogEvent $ "Ignoring non-character keypresses: " <> showT badKeys]
-                        <> act (send $ SpotifySearchAndPlay searchType text)
-    KeyEvent k Pressed | Just (t, ks) <- typing -> (const [], s & #typing ?~ (t, (k, shift) : ks))
+                TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
+    KeyEvent k Pressed | Just (t, cs) <- typing -> case keyToChar shift k of
+        Just c -> (const [], s & #typing ?~ (t, c : cs))
+        Nothing ->
+            ( const [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
+            , s
+            )
     _ | Just mk <- modeChangeState -> case event of
         KeyEvent KeyRightalt Released -> (,s & #modeChangeState .~ Nothing) case mk of
             Nothing -> \AppState{..} -> simpleAct $ SetMode previousMode
