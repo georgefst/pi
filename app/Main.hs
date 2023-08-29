@@ -228,6 +228,7 @@ data Action a where
     GetLightColourCache :: Action (Maybe HSBK)
     SetLightColourCache :: HSBK -> Action ()
     UnsetLightColourCache :: Action ()
+    LightReScan :: Action ()
     NextLight :: Action ()
     GetLightPower :: Device -> Action Bool
     SetLightPower :: Device -> Bool -> Action ()
@@ -295,6 +296,12 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
     GetLightColourCache -> use #lightColourCache
     SetLightColourCache l -> #lightColourCache ?= l
     UnsetLightColourCache -> #lightColourCache .= Nothing
+    LightReScan ->
+        maybe
+            (logMessage "No LIFX devices found during re-scan - retaining old list")
+            (\ds -> #lifxDevices .= Stream.cycle ds)
+            . nonEmpty
+            =<< discoverLifx
     NextLight -> #lifxDevices %= Stream.tail
     GetLightPower l -> statePowerToBool <$> sendMessage l GetPower
     SetLightPower l p -> sendMessage l $ SetPower p
@@ -409,6 +416,7 @@ dispatchKeys opts event s@KeyboardState{..} = case modeChangeState of
                 KeyEvent KeyPlaypause Pressed -> simpleAct $ Mpris "PlayPause"
                 KeyEvent KeyPrevioussong Pressed -> simpleAct $ Mpris "Previous"
                 KeyEvent KeyNextsong Pressed -> simpleAct $ Mpris "Next"
+                KeyEvent KeyR Pressed -> simpleAct LightReScan
                 KeyEvent KeyL Pressed -> act do
                     l <- send GetCurrentLight
                     p <- send $ GetLightPower l
