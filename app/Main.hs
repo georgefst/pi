@@ -390,7 +390,7 @@ data KeyboardState = KeyboardState
     , ctrl :: Bool
     , alt :: Bool
     , modeChangeState :: Maybe (Maybe Key)
-    , typing :: Maybe (TypingReason, [Key])
+    , typing :: Maybe (TypingReason, [(Key, Bool)])
     }
     deriving (Generic)
 newtype TypingReason
@@ -406,15 +406,15 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
     KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
     KeyEvent KeyEnter Pressed | Just (t, ks) <- typing -> (,s & #typing .~ Nothing) \AppState{} ->
         let (text, badKeys) =
-                bimap (T.pack . mapMaybe fst) (map snd)
-                    . partition (isJust . fst)
-                    . map (\k -> (keyToChar shift k, k))
+                bimap (T.pack . mapMaybe fst3) (map $ snd3 &&& thd3)
+                    . partition (isJust . fst3)
+                    . map (\(k, shift') -> (keyToChar shift' k, k, shift'))
                     $ reverse ks
          in case t of
                 TypingSpotifySearch searchType ->
                     mwhen (notNull badKeys) [LogEvent $ "Ignoring non-character keypresses: " <> showT badKeys]
                         <> act (send $ SpotifySearchAndPlay searchType text)
-    KeyEvent k Pressed | Just (t, ks) <- typing -> (const [], s & #typing ?~ (t, k : ks))
+    KeyEvent k Pressed | Just (t, ks) <- typing -> (const [], s & #typing ?~ (t, (k, shift) : ks))
     _ | Just mk <- modeChangeState -> case event of
         KeyEvent KeyRightalt Released -> (,s & #modeChangeState .~ Nothing) case mk of
             Nothing -> \AppState{..} -> simpleAct $ SetMode previousMode
