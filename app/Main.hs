@@ -396,8 +396,7 @@ data KeyboardState = KeyboardState
 newtype TypingReason
     = TypingSpotifySearch Spotify.SearchType
 dispatchKeys :: KeyboardOpts -> Evdev.EventData -> KeyboardState -> (AppState -> Maybe Event, KeyboardState)
-dispatchKeys opts event s@KeyboardState{..} =
- case event of
+dispatchKeys opts event s@KeyboardState{..} = case event of
   KeyEvent KeyL Pressed | ctrl && shift -> startSpotifySearch Spotify.AlbumSearch
   KeyEvent KeyA Pressed | ctrl && shift -> startSpotifySearch Spotify.ArtistSearch
   KeyEvent KeyP Pressed | ctrl && shift -> startSpotifySearch Spotify.PlaylistSearch
@@ -409,8 +408,7 @@ dispatchKeys opts event s@KeyboardState{..} =
     act $ ($ T.pack $ mapMaybe (keyToChar shift) $ reverse ks) case t of
         TypingSpotifySearch searchType -> send . SpotifySearchAndPlay searchType
   KeyEvent k Pressed | Just (t, ks) <- typing -> (const Nothing, s & #typing ?~ (t, k : ks))
-  _ -> case modeChangeState of
-    Just mk -> case event of
+  _ | Just mk <- modeChangeState  -> case event of
         KeyEvent KeyRightalt Released -> (,s & #modeChangeState .~ Nothing) case mk of
             Nothing -> \AppState{..} -> simpleAct $ SetMode previousMode
             Just k -> const case k of
@@ -426,7 +424,7 @@ dispatchKeys opts event s@KeyboardState{..} =
                 KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?~ Just k
                 _ -> id
             )
-    Nothing -> (,s & case event of
+  _ -> (,s & case event of
                     KeyEvent KeyLeftctrl e -> setMod #ctrl e
                     KeyEvent KeyRightctrl e -> setMod #ctrl e
                     KeyEvent KeyLeftshift e -> setMod #shift e
