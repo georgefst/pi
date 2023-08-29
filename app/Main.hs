@@ -197,12 +197,13 @@ main = do
                         sendM . logMessage $ showT r
                         sendM . liftIO $ f r
                 )
-                . S.mapMaybeM gets
+                . S.concatMap S.fromList
+                . S.mapM gets
                 . (SK.toStream . SK.hoist liftIO . SK.fromStream)
                 . S.append
                     ( -- flash all lights to show we have finished initialising
                       S.fromList
-                        . map (const . Just . ActionEvent mempty . send)
+                        . map (const . pure . ActionEvent mempty . send)
                         . intersperse (Sleep 0.4)
                         -- TODO we shouldn't have to actually set the mode - I only really want to flash the LED
                         -- but then there's no real harm, except that and that we have to repeat the initial states
@@ -212,7 +213,7 @@ main = do
                         . map SetMode
                         $ enumerate <> [initialState.previousMode, initialState.mode]
                     )
-                . S.cons (const $ Just $ LogEvent "Starting...")
+                . S.cons (const [LogEvent "Starting..."])
                 $ S.parList
                     id
                     [ scanStream
@@ -220,7 +221,7 @@ main = do
                         (dispatchKeys $ opts & \Opts{..} -> KeyboardOpts{..})
                         . S.repeatM
                         $ Evdev.eventData <$> Evdev.nextEvent keyboard -- TODO use `evdev-streamly`
-                    , S.repeatM $ const . Just <$> takeMVar eventMVar
+                    , S.repeatM $ const . pure <$> takeMVar eventMVar
                     ]
 
 data Event where
@@ -394,7 +395,7 @@ data KeyboardState = KeyboardState
     deriving (Generic)
 newtype TypingReason
     = TypingSpotifySearch Spotify.SearchType
-dispatchKeys :: KeyboardOpts -> Evdev.EventData -> KeyboardState -> (AppState -> Maybe Event, KeyboardState)
+dispatchKeys :: KeyboardOpts -> Evdev.EventData -> KeyboardState -> (AppState -> [Event], KeyboardState)
 dispatchKeys opts event s@KeyboardState{..} = case event of
     KeyEvent KeyL Pressed | ctrl && shift -> startSpotifySearch Spotify.AlbumSearch
     KeyEvent KeyA Pressed | ctrl && shift -> startSpotifySearch Spotify.ArtistSearch
@@ -407,7 +408,7 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
         let (text, _badKeys) = bimap (T.pack . mapMaybe fst) (map snd) $ partition (isJust . fst) $ map (\k -> (keyToChar shift k, k)) $ reverse ks
          in case t of
                 TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
-    KeyEvent k Pressed | Just (t, ks) <- typing -> (const Nothing, s & #typing ?~ (t, k : ks))
+    KeyEvent k Pressed | Just (t, ks) <- typing -> (const [], s & #typing ?~ (t, k : ks))
     _ | Just mk <- modeChangeState -> case event of
         KeyEvent KeyRightalt Released -> (,s & #modeChangeState .~ Nothing) case mk of
             Nothing -> \AppState{..} -> simpleAct $ SetMode previousMode
@@ -417,9 +418,9 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
                 KeyDot -> simpleAct $ SetMode Normal
                 KeyT -> simpleAct $ SetMode TV
                 KeyComma -> simpleAct $ SetMode Sending
-                _ -> Just $ LogEvent $ "Key does not correspond to any mode: " <> showT k
+                _ -> [LogEvent $ "Key does not correspond to any mode: " <> showT k]
         _ ->
-            ( const Nothing
+            ( const []
             , s & case event of
                 KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?~ Just k
                 _ -> id
@@ -433,11 +434,11 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
             KeyEvent KeyRightalt Pressed -> #modeChangeState ?~ Nothing
             _ -> id)
         \AppState{..} -> case mode of
-            Idle -> Nothing
-            Quiet -> Nothing
+            Idle -> []
+            Quiet -> []
             Sending -> case event of
                 KeyEvent k e | k /= KeyRightalt -> simpleAct $ SendKey k e
-                _ -> Nothing
+                _ -> []
             Normal -> case event of
                 KeyEvent KeyEsc Pressed | ctrl -> simpleAct Exit
                 KeyEvent KeyP Pressed ->
@@ -475,7 +476,7 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
                 KeyEvent KeyUp e -> modifyLight e $ #brightness %~ incrementLightField clampedAdd maxBound 256
                 KeyEvent KeyLeftbrace e -> modifyLight e $ #kelvin %~ incrementLightField clampedSub 1500 25
                 KeyEvent KeyRightbrace e -> modifyLight e $ #kelvin %~ incrementLightField clampedAdd 9000 25
-                _ -> Nothing
+                _ -> []
             TV -> case event of
                 KeyEvent KeySpace Pressed -> act do
                     send $ SendIR IROnce IRTV "KEY_AUX"
@@ -515,18 +516,18 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
                 KeyEvent KeyBackspace e -> irHold e IRTV "KEY_BACK"
                 KeyEvent KeyI e -> irHold e IRTV "KEY_INFO"
                 KeyEvent KeyEsc e -> irHold e IRTV "KEY_EXIT"
-                _ -> Nothing
+                _ -> []
   where
     setMod l = \case
         Pressed -> l .~ True
         Released -> l .~ False
         Repeated -> id
     simpleAct = act . send
-    act = Just . ActionEvent mempty
+    act = pure . ActionEvent mempty
     irOnce = simpleAct .: SendIR IROnce
     irHold = \case
         Pressed -> simpleAct .: SendIR IRStart
-        Repeated -> const $ const Nothing
+        Repeated -> const $ const []
         Released -> simpleAct .: SendIR IRStop
     hueInterval = 16 * if ctrl then 16 else if shift then 4 else 1
     clampedAdd m a b = b + min (m - b) a -- TODO better implementation? maybe in library? else, this is presumably commutative in last two args (ditto below)
@@ -543,7 +544,7 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
             send $ SetLightColourCache c
             send $ SetLightColour l 0 c
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
-    startSpotifySearch t = (const Nothing, s & #typing ?~ (TypingSpotifySearch t, []))
+    startSpotifySearch t = (const [], s & #typing ?~ (TypingSpotifySearch t, []))
 
 -- we only use this for actions which return a response
 webServer :: (forall m. (MonadIO m) => Event -> m ()) -> Wai.Application
