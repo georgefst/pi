@@ -181,8 +181,8 @@ main = do
             -- TODO disabled - see `gpioMonitor` definition
             -- `race_` gpioMonitor
         )
-        . flip evalStateT initialState
         . flip runLoggingT (liftIO . T.putStrLn)
+        . flip evalStateT initialState
         . runLifxUntilSuccess
             (either (handleError . Error @() "Misc exception") (handleError . Error "LIFX error"))
             (lifxTime opts.lifxTimeout)
@@ -218,7 +218,7 @@ main = do
                         $ enumerate <> [initialState.previousMode, initialState.mode]
                     )
                 . S.cons (const [LogEvent "Starting..."])
-                . S.morphInner liftIO
+                . S.morphInner (lift . lift . lift)
                 $ S.parList
                     id
                     [ scanStream
@@ -230,11 +230,13 @@ main = do
                         . S.filterM
                             ( \dev -> do
                                 name <- decodeUtf8 <$> liftIO (Evdev.deviceName dev)
-                                pure $ name `elem` opts.keyboard
+                                let good = name `elem` opts.keyboard
+                                logMessage $ "Evdev device " <> bool "ignored" "added" good <> ": " <> name
+                                pure good
                             )
                         . S.append allDevices
                         $ newDevices' 1_000_000
-                    , S.repeatM $ const . pure <$> takeMVar eventMVar
+                    , S.repeatM $ const . pure <$> liftIO (takeMVar eventMVar)
                     ]
 
 data Event where
