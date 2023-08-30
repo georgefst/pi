@@ -32,6 +32,7 @@ import Evdev (EventData (KeyEvent), KeyEvent (..))
 import Evdev qualified
 import Evdev.Codes (Key (..))
 import Evdev.Stream
+import GHC.Records (HasField)
 import Lifx.Lan hiding (SetLightPower)
 import Network.HTTP.Client
 import Network.HTTP.Types
@@ -289,6 +290,7 @@ data ActionOpts = ActionOpts
     , keySendIps :: [IP]
     }
 runAction ::
+    forall m a.
     (MonadIO m, MonadState AppState m, MonadLifx m, MonadLog Text m, MonadError Error m) =>
     ActionOpts ->
     Action a ->
@@ -376,19 +378,32 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         response <- liftIO $ flip httpLbs man =<< parseRequest "http://192.168.1.114/rpc/Switch.Toggle?id=0"
         logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
     SpotifySearchAndPlay searchType query -> do
-        r <- liftIO $ Spotify.search query [searchType] Nothing Nothing Spotify.noPagingParams
-        u <- maybe (throwError $ SimpleError "No Spotify entries") pure case searchType of
+        searchResult <- liftIO $ Spotify.search query [searchType] Nothing Nothing Spotify.noPagingParams
+        case searchType of
+            Spotify.AlbumSearch -> do
+                album <- getURI searchResult.albums
+                play (Just album) Nothing
+            Spotify.ArtistSearch -> do
+                -- TODO shuffle my liked songs by artist instead of playing top ones globally?
+                artist <- getURI searchResult.artists
+                play (Just artist) Nothing
+            Spotify.PlaylistSearch -> do
+                playlist <- getURI searchResult.playlists
+                play (Just playlist) Nothing
+            Spotify.TrackSearch -> do
+                track <- getURI searchResult.tracks
+                play Nothing (Just [track])
             -- TODO improve library to support all search types properly
-            Spotify.AlbumSearch -> getURI r.albums
-            Spotify.ArtistSearch -> getURI r.artists
-            Spotify.PlaylistSearch -> getURI r.playlists
-            Spotify.TrackSearch -> getURI r.tracks
-            _ -> Nothing
-        liftIO
-            . Spotify.startPlayback (Just opts.spotifyDeviceId)
-            $ Spotify.StartPlaybackOpts Nothing (Just [u]) Nothing
+            t -> throwError $ Error "Unsupported Spotify search type" t
       where
-        getURI = (fmap (.uri) . listToMaybe . (.items) =<<)
+        getURI :: (HasField "uri" x Spotify.URI) => Maybe (Spotify.Paging x) -> m Spotify.URI
+        getURI =
+            maybe (throwError $ Error "No Spotify entries" (searchType, query)) pure
+                . (fmap (.uri) . listToMaybe . (.items) =<<)
+        play context item =
+            liftIO
+                . Spotify.startPlayback (Just opts.spotifyDeviceId)
+                $ Spotify.StartPlaybackOpts context item Nothing
 
 newtype KeyboardOpts = KeyboardOpts
     { flashTime :: NominalDiffTime
