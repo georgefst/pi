@@ -10,6 +10,7 @@ executable pi
     main-is: Main.hs
     hs-source-dirs: app
     other-modules:
+        Evdev.Stream
         GPIO
         Util
         Util.Lifx
@@ -23,7 +24,9 @@ executable pi
         evdev ^>= 2.2,
         exceptions ^>= 0.10,
         extra ^>= 1.7.10,
+        filepath-bytestring ^>= 1.4.2,
         freer-simple ^>= 1.2.1.2,
+        hinotify ^>= 0.4.1,
         http-api-data ^>= 0.6,
         http-client ^>= 0.7.11,
         http-types ^>= 0.12.3,

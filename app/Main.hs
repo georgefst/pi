@@ -23,6 +23,7 @@ import Data.Map qualified as Map
 import Data.Maybe
 import Data.Stream.Infinite qualified as Stream
 import Data.Text qualified as T
+import Data.Text.Encoding
 import Data.Text.IO qualified as T
 import Data.Time
 import Data.Tuple.Extra
@@ -30,6 +31,7 @@ import Data.Word
 import Evdev (EventData (KeyEvent), KeyEvent (..))
 import Evdev qualified
 import Evdev.Codes (Key (..))
+import Evdev.Stream
 import Lifx.Lan hiding (SetLightPower)
 import Network.HTTP.Client
 import Network.HTTP.Types
@@ -74,6 +76,7 @@ data Opts = Opts
     , udpPort :: Word16
     , httpPort :: Warp.Port
     , spotifyDeviceId :: Spotify.DeviceID
+    , keyboard :: [Text]
     , keySendPort :: PortNumber
     , keySendIps :: [IP]
     }
@@ -187,7 +190,6 @@ main = do
             (lifxTime opts.lifxTimeout)
             (Just $ fromIntegral opts.lifxPort)
         $ do
-            keyboard <- liftIO $ Evdev.newDevice "/dev/input/event3"
             S.fold
                 ( SF.drainMapM \case
                     ErrorEvent e -> handleError e
@@ -224,8 +226,16 @@ main = do
                     [ scanStream
                         (KeyboardState False False False Nothing Nothing)
                         (dispatchKeys $ opts & \Opts{..} -> KeyboardOpts{..})
-                        . S.repeatM
-                        $ Evdev.eventData <$> Evdev.nextEvent keyboard -- TODO use `evdev-streamly`
+                        . fmap (Evdev.eventData . snd)
+                        . readEventsMany
+                        -- I can't find a reliable heuristic for "basically a keyboard" so we filter by name
+                        . S.filterM
+                            ( \dev -> do
+                                name <- decodeUtf8 <$> liftIO (Evdev.deviceName dev)
+                                pure $ name `elem` opts.keyboard
+                            )
+                        . S.append allDevices
+                        $ newDevices' 1_000_000
                     , S.repeatM $ const . pure <$> takeMVar eventMVar
                     ]
 
@@ -272,7 +282,6 @@ data IRCmdType
 
 data ActionOpts = ActionOpts
     { ledErrorPin :: Int
-    , keyboard :: Evdev.Device
     , modeLED :: Mode -> Maybe Int
     , setLED :: forall m. (MonadState AppState m, MonadIO m) => Int -> Bool -> m ()
     , spotifyDeviceId :: Spotify.DeviceID
@@ -293,11 +302,9 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         for_ (opts.modeLED old) $ flip setLED False
         for_ (opts.modeLED new) $ flip setLED True
         case old of
-            Idle -> liftIO $ Evdev.grabDevice opts.keyboard
             Quiet -> setSystemLEDs [("ACT", "mmc0"), ("PWR", "default-on")]
             _ -> pure ()
         case new of
-            Idle -> liftIO $ Evdev.ungrabDevice opts.keyboard
             Quiet -> setSystemLEDs [("ACT", "none"), ("PWR", "none")]
             _ -> pure ()
       where
