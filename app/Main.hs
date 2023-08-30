@@ -407,12 +407,14 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
         let text = T.pack $ reverse cs
          in case t of
                 TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
-    KeyEvent k Pressed | Just (t, cs) <- typing -> case keyToChar shift k of
-        Just c -> (const [], #typing ?~ (t, c : cs))
-        Nothing ->
-            ( const [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
-            , id
-            )
+    KeyEvent k e | Just (t, cs) <- typing -> case e of
+        Pressed -> case keyToChar shift k of
+            Just c -> (const [], #typing ?~ (t, c : cs))
+            Nothing ->
+                ( const [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
+                , id
+                )
+        _ -> (const [], id)
     _ | Just mk <- modeChangeState -> case event of
         KeyEvent KeyRightalt Released -> (,#modeChangeState .~ Nothing) case mk of
             Nothing -> \AppState{..} -> simpleAct $ SetMode previousMode
