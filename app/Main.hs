@@ -171,7 +171,11 @@ main = do
 
     race_
         ( Warp.runSettings
-            (warpSettings opts.httpPort $ putMVar eventMVar . ErrorEvent . Error "HTTP error")
+            ( Warp.setLogger
+                (curry3 $ unless . statusIsSuccessful . snd3 <*> putMVar eventMVar . ErrorEvent . Error "HTTP error")
+                . Warp.setPort opts.httpPort
+                $ Warp.defaultSettings
+            )
             (webServer $ liftIO . putMVar eventMVar)
             -- TODO disabled - see `gpioMonitor` definition
             -- `race_` gpioMonitor
@@ -564,12 +568,3 @@ webServer f =
         m <- liftIO newEmptyMVar
         f $ ActionEvent (putMVar m) x
         okPlainText [] . (<> "\n") . show' =<< liftIO (takeMVar m)
-
-warpSettings ::
-    Warp.Port ->
-    (forall a. (Show a) => a -> IO ()) ->
-    Warp.Settings
-warpSettings port logError =
-    Warp.setLogger (curry3 $ unless . statusIsSuccessful . snd3 <*> logError)
-        . Warp.setPort port
-        $ Warp.defaultSettings
