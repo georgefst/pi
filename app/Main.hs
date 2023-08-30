@@ -395,7 +395,7 @@ data KeyboardState = KeyboardState
 newtype TypingReason
     = TypingSpotifySearch Spotify.SearchType
 dispatchKeys :: KeyboardOpts -> Evdev.EventData -> KeyboardState -> (AppState -> [Event], KeyboardState)
-dispatchKeys opts event s@KeyboardState{..} = case event of
+dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case event of
     KeyEvent KeyL Pressed | ctrl && shift -> startSpotifySearch Spotify.AlbumSearch
     KeyEvent KeyA Pressed | ctrl && shift -> startSpotifySearch Spotify.ArtistSearch
     KeyEvent KeyP Pressed | ctrl && shift -> startSpotifySearch Spotify.PlaylistSearch
@@ -403,18 +403,18 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
     KeyEvent KeyW Pressed | ctrl && shift -> startSpotifySearch Spotify.ShowSearch
     KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
     KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
-    KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> (,s & #typing .~ Nothing) \AppState{} ->
+    KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> (,#typing .~ Nothing) \AppState{} ->
         let text = T.pack $ reverse cs
          in case t of
                 TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
     KeyEvent k Pressed | Just (t, cs) <- typing -> case keyToChar shift k of
-        Just c -> (const [], s & #typing ?~ (t, c : cs))
+        Just c -> (const [], #typing ?~ (t, c : cs))
         Nothing ->
             ( const [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
-            , s
+            , id
             )
     _ | Just mk <- modeChangeState -> case event of
-        KeyEvent KeyRightalt Released -> (,s & #modeChangeState .~ Nothing) case mk of
+        KeyEvent KeyRightalt Released -> (,#modeChangeState .~ Nothing) case mk of
             Nothing -> \AppState{..} -> simpleAct $ SetMode previousMode
             Just k -> const case k of
                 KeyEsc -> simpleAct $ SetMode Idle
@@ -425,18 +425,11 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
                 _ -> [LogEvent $ "Key does not correspond to any mode: " <> showT k]
         _ ->
             ( const []
-            , s & case event of
+            , case event of
                 KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?~ Just k
                 _ -> id
             )
-    _ -> (,s & case event of
-            KeyEvent KeyLeftctrl e -> setMod #ctrl e
-            KeyEvent KeyRightctrl e -> setMod #ctrl e
-            KeyEvent KeyLeftshift e -> setMod #shift e
-            KeyEvent KeyRightshift e -> setMod #shift e
-            KeyEvent KeyLeftalt e -> setMod #alt e
-            KeyEvent KeyRightalt Pressed -> #modeChangeState ?~ Nothing
-            _ -> id)
+    _ -> (,id)
         \AppState{..} -> case mode of
             Idle -> []
             Quiet -> []
@@ -522,10 +515,19 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
                 KeyEvent KeyEsc e -> irHold e IRTV "KEY_EXIT"
                 _ -> []
   where
-    setMod l = \case
-        Pressed -> l .~ True
-        Released -> l .~ False
-        Repeated -> id
+    setMods = case event of
+        KeyEvent KeyLeftctrl e -> setMod #ctrl e
+        KeyEvent KeyRightctrl e -> setMod #ctrl e
+        KeyEvent KeyLeftshift e -> setMod #shift e
+        KeyEvent KeyRightshift e -> setMod #shift e
+        KeyEvent KeyLeftalt e -> setMod #alt e
+        KeyEvent KeyRightalt Pressed -> #modeChangeState ?~ Nothing
+        _ -> id
+      where
+        setMod l = \case
+            Pressed -> l .~ True
+            Released -> l .~ False
+            Repeated -> id
     simpleAct = act . send
     act = pure . ActionEvent mempty
     irOnce = simpleAct .: SendIR IROnce
@@ -548,7 +550,7 @@ dispatchKeys opts event s@KeyboardState{..} = case event of
             send $ SetLightColourCache c
             send $ SetLightColour l 0 c
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
-    startSpotifySearch t = (const [LogEvent "Waiting for keyboard input"], s & #typing ?~ (TypingSpotifySearch t, []))
+    startSpotifySearch t = (const [LogEvent "Waiting for keyboard input"], #typing ?~ (TypingSpotifySearch t, []))
 
 -- we only use this for actions which return a response
 webServer :: (forall m. (MonadIO m) => Event -> m ()) -> Wai.Application
