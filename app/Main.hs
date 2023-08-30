@@ -429,91 +429,90 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
                 KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?~ Just k
                 _ -> id
             )
-    _ -> (,id)
-        \AppState{..} -> case mode of
-            Idle -> []
-            Quiet -> []
-            Sending -> case event of
-                KeyEvent k e | k /= KeyRightalt -> simpleAct $ SendKey k e
-                _ -> []
-            Normal -> case event of
-                KeyEvent KeyEsc Pressed | ctrl -> simpleAct Exit
-                KeyEvent KeyP Pressed ->
-                    if ctrl
-                        then simpleAct ToggleHifiPlug
-                        else act do
-                            send $ SendIR IROnce IRHifi "KEY_POWER"
-                            send $ Sleep 1
-                            send $ SendIR IROnce IRHifi "KEY_TAPE"
-                KeyEvent KeyS Pressed -> act do
-                    send NextLight
-                    l <- send GetCurrentLight
-                    LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
-                    when wasOff $ send $ SetLightPower l True
-                    send $ SetLightColour l opts.flashTime $ hsbk & #brightness %~ (`div` 2)
-                    send $ Sleep opts.flashTime
-                    send $ SetLightColour l opts.flashTime hsbk
-                    when wasOff $ send $ SetLightPower l False
-                KeyEvent KeyVolumeup e -> irHold e IRHifi "KEY_VOLUMEUP"
-                KeyEvent KeyVolumedown e -> irHold e IRHifi "KEY_VOLUMEDOWN"
-                KeyEvent KeyMute Pressed -> irOnce IRHifi "muting"
-                KeyEvent KeyPlaypause Pressed -> simpleAct $ Mpris "PlayPause"
-                KeyEvent KeyPrevioussong Pressed -> simpleAct $ Mpris "Previous"
-                KeyEvent KeyNextsong Pressed -> simpleAct $ Mpris "Next"
-                KeyEvent KeyR Pressed -> simpleAct LightReScan
-                KeyEvent KeyL Pressed -> act do
-                    l <- send GetCurrentLight
-                    p <- send $ GetLightPower l
-                    send $ SetLightPower l $ not p
-                KeyEvent KeyLeft e -> modifyLight e $ #hue %~ subtract hueInterval
-                KeyEvent KeyRight e -> modifyLight e $ #hue %~ (+ hueInterval)
-                KeyEvent KeyMinus e -> modifyLight e $ #saturation %~ incrementLightField clampedSub minBound 256
-                KeyEvent KeyEqual e -> modifyLight e $ #saturation %~ incrementLightField clampedAdd maxBound 256
-                KeyEvent KeyDown e -> modifyLight e $ #brightness %~ incrementLightField clampedSub minBound 256
-                KeyEvent KeyUp e -> modifyLight e $ #brightness %~ incrementLightField clampedAdd maxBound 256
-                KeyEvent KeyLeftbrace e -> modifyLight e $ #kelvin %~ incrementLightField clampedSub 1500 25
-                KeyEvent KeyRightbrace e -> modifyLight e $ #kelvin %~ incrementLightField clampedAdd 9000 25
-                _ -> []
-            TV -> case event of
-                KeyEvent KeySpace Pressed -> act do
-                    send $ SendIR IROnce IRTV "KEY_AUX"
-                    send $ Sleep t
-                    send $ SendIR IROnce IRTV "KEY_AUX"
-                    send $ Sleep t
-                    send $ SendIR IROnce IRTV "KEY_OK"
-                  where
-                    t = if ctrl then 1 else 0.35
-                KeyEvent KeyP e -> irHold e IRTV "KEY_POWER"
-                KeyEvent Key1 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_1"
-                KeyEvent Key2 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_2"
-                KeyEvent Key3 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_3"
-                KeyEvent Key4 e -> irHold e IRTV "KEY_4"
-                KeyEvent Key5 e -> irHold e IRTV "KEY_5"
-                KeyEvent Key6 e -> irHold e IRTV "KEY_6"
-                KeyEvent Key7 e -> irHold e IRTV "KEY_7"
-                KeyEvent Key8 e -> irHold e IRTV "KEY_8"
-                KeyEvent Key9 e -> irHold e IRTV "KEY_9"
-                KeyEvent Key0 e -> irHold e IRTV "KEY_0"
-                KeyEvent KeyVolumeup e -> irHold e IRTV "KEY_VOLUMEUP"
-                KeyEvent KeyVolumedown e -> irHold e IRTV "KEY_VOLUMEDOWN"
-                KeyEvent KeyMute e -> irHold e IRTV "KEY_MUTE"
-                KeyEvent KeyComma e -> irHold e IRTV "KEY_CHANNELDOWN"
-                KeyEvent KeyDot e -> irHold e IRTV "KEY_CHANNELUP"
-                KeyEvent KeyA e -> irHold e IRTV "KEY_AUX"
-                KeyEvent KeyS e -> irHold e IRTV "KEY_SETUP"
-                KeyEvent KeyR e -> irHold e IRTV "KEY_RED"
-                KeyEvent KeyT e -> irHold e IRTV "KEY_SUBTITLE"
-                KeyEvent KeyG e -> irHold e IRTV "KEY_G"
-                KeyEvent KeyQ e -> irHold e IRTV "KEY_MENU"
-                KeyEvent KeyUp e -> irHold e IRTV "KEY_UP"
-                KeyEvent KeyDown e -> irHold e IRTV "KEY_DOWN"
-                KeyEvent KeyLeft e -> irHold e IRTV "KEY_LEFT"
-                KeyEvent KeyRight e -> irHold e IRTV "KEY_RIGHT"
-                KeyEvent KeyEnter e -> irHold e IRTV "KEY_OK"
-                KeyEvent KeyBackspace e -> irHold e IRTV "KEY_BACK"
-                KeyEvent KeyI e -> irHold e IRTV "KEY_INFO"
-                KeyEvent KeyEsc e -> irHold e IRTV "KEY_EXIT"
-                _ -> []
+    _ -> (,id) \AppState{..} -> case mode of
+        Idle -> []
+        Quiet -> []
+        Sending -> case event of
+            KeyEvent k e | k /= KeyRightalt -> simpleAct $ SendKey k e
+            _ -> []
+        Normal -> case event of
+            KeyEvent KeyEsc Pressed | ctrl -> simpleAct Exit
+            KeyEvent KeyP Pressed ->
+                if ctrl
+                    then simpleAct ToggleHifiPlug
+                    else act do
+                        send $ SendIR IROnce IRHifi "KEY_POWER"
+                        send $ Sleep 1
+                        send $ SendIR IROnce IRHifi "KEY_TAPE"
+            KeyEvent KeyS Pressed -> act do
+                send NextLight
+                l <- send GetCurrentLight
+                LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
+                when wasOff $ send $ SetLightPower l True
+                send $ SetLightColour l opts.flashTime $ hsbk & #brightness %~ (`div` 2)
+                send $ Sleep opts.flashTime
+                send $ SetLightColour l opts.flashTime hsbk
+                when wasOff $ send $ SetLightPower l False
+            KeyEvent KeyVolumeup e -> irHold e IRHifi "KEY_VOLUMEUP"
+            KeyEvent KeyVolumedown e -> irHold e IRHifi "KEY_VOLUMEDOWN"
+            KeyEvent KeyMute Pressed -> irOnce IRHifi "muting"
+            KeyEvent KeyPlaypause Pressed -> simpleAct $ Mpris "PlayPause"
+            KeyEvent KeyPrevioussong Pressed -> simpleAct $ Mpris "Previous"
+            KeyEvent KeyNextsong Pressed -> simpleAct $ Mpris "Next"
+            KeyEvent KeyR Pressed -> simpleAct LightReScan
+            KeyEvent KeyL Pressed -> act do
+                l <- send GetCurrentLight
+                p <- send $ GetLightPower l
+                send $ SetLightPower l $ not p
+            KeyEvent KeyLeft e -> modifyLight e $ #hue %~ subtract hueInterval
+            KeyEvent KeyRight e -> modifyLight e $ #hue %~ (+ hueInterval)
+            KeyEvent KeyMinus e -> modifyLight e $ #saturation %~ incrementLightField clampedSub minBound 256
+            KeyEvent KeyEqual e -> modifyLight e $ #saturation %~ incrementLightField clampedAdd maxBound 256
+            KeyEvent KeyDown e -> modifyLight e $ #brightness %~ incrementLightField clampedSub minBound 256
+            KeyEvent KeyUp e -> modifyLight e $ #brightness %~ incrementLightField clampedAdd maxBound 256
+            KeyEvent KeyLeftbrace e -> modifyLight e $ #kelvin %~ incrementLightField clampedSub 1500 25
+            KeyEvent KeyRightbrace e -> modifyLight e $ #kelvin %~ incrementLightField clampedAdd 9000 25
+            _ -> []
+        TV -> case event of
+            KeyEvent KeySpace Pressed -> act do
+                send $ SendIR IROnce IRTV "KEY_AUX"
+                send $ Sleep t
+                send $ SendIR IROnce IRTV "KEY_AUX"
+                send $ Sleep t
+                send $ SendIR IROnce IRTV "KEY_OK"
+              where
+                t = if ctrl then 1 else 0.35
+            KeyEvent KeyP e -> irHold e IRTV "KEY_POWER"
+            KeyEvent Key1 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_1"
+            KeyEvent Key2 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_2"
+            KeyEvent Key3 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_3"
+            KeyEvent Key4 e -> irHold e IRTV "KEY_4"
+            KeyEvent Key5 e -> irHold e IRTV "KEY_5"
+            KeyEvent Key6 e -> irHold e IRTV "KEY_6"
+            KeyEvent Key7 e -> irHold e IRTV "KEY_7"
+            KeyEvent Key8 e -> irHold e IRTV "KEY_8"
+            KeyEvent Key9 e -> irHold e IRTV "KEY_9"
+            KeyEvent Key0 e -> irHold e IRTV "KEY_0"
+            KeyEvent KeyVolumeup e -> irHold e IRTV "KEY_VOLUMEUP"
+            KeyEvent KeyVolumedown e -> irHold e IRTV "KEY_VOLUMEDOWN"
+            KeyEvent KeyMute e -> irHold e IRTV "KEY_MUTE"
+            KeyEvent KeyComma e -> irHold e IRTV "KEY_CHANNELDOWN"
+            KeyEvent KeyDot e -> irHold e IRTV "KEY_CHANNELUP"
+            KeyEvent KeyA e -> irHold e IRTV "KEY_AUX"
+            KeyEvent KeyS e -> irHold e IRTV "KEY_SETUP"
+            KeyEvent KeyR e -> irHold e IRTV "KEY_RED"
+            KeyEvent KeyT e -> irHold e IRTV "KEY_SUBTITLE"
+            KeyEvent KeyG e -> irHold e IRTV "KEY_G"
+            KeyEvent KeyQ e -> irHold e IRTV "KEY_MENU"
+            KeyEvent KeyUp e -> irHold e IRTV "KEY_UP"
+            KeyEvent KeyDown e -> irHold e IRTV "KEY_DOWN"
+            KeyEvent KeyLeft e -> irHold e IRTV "KEY_LEFT"
+            KeyEvent KeyRight e -> irHold e IRTV "KEY_RIGHT"
+            KeyEvent KeyEnter e -> irHold e IRTV "KEY_OK"
+            KeyEvent KeyBackspace e -> irHold e IRTV "KEY_BACK"
+            KeyEvent KeyI e -> irHold e IRTV "KEY_INFO"
+            KeyEvent KeyEsc e -> irHold e IRTV "KEY_EXIT"
+            _ -> []
   where
     setMods = case event of
         KeyEvent KeyLeftctrl e -> setMod #ctrl e
