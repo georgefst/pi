@@ -428,6 +428,8 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
     KeyEvent KeyW Pressed | ctrl && shift -> startSpotifySearch Spotify.ShowSearch
     KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
     KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
+    KeyEvent KeyEsc Pressed | Just _ <- typing -> (,#typing .~ Nothing) \AppState{} ->
+        [LogEvent "Discarding keyboard input"]
     KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> (,#typing .~ Nothing) \AppState{} ->
         let text = T.pack $ reverse cs
          in case t of
