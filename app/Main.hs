@@ -384,9 +384,6 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
             Spotify.PlaylistSearch -> getURI r.playlists
             Spotify.TrackSearch -> getURI r.tracks
             _ -> Nothing
-        -- Spotify.ShowSearch -> fmap (.uri) . listToMaybe . (.items ) =<< r.shows
-        -- Spotify.EpisodeSearch -> fmap (.uri) . listToMaybe . (.items ) =<< r.episodes
-        -- Spotify.AudiobookSearch -> fmap (.uri) . listToMaybe . (.items ) =<< r.audiobooks
         liftIO
             . Spotify.startPlayback (Just opts.spotifyDeviceId)
             $ Spotify.StartPlaybackOpts Nothing (Just [u]) Nothing
