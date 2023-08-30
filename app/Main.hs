@@ -409,12 +409,12 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
                 TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
     KeyEvent k e | Just (t, cs) <- typing -> case e of
         Pressed -> case keyToChar shift k of
-            Just c -> (const [], #typing ?~ (t, c : cs))
+            Just c -> (mempty, #typing ?~ (t, c : cs))
             Nothing ->
                 ( const [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
                 , id
                 )
-        _ -> (const [], id)
+        _ -> (mempty, id)
     _ | Just mk <- modeChangeState -> case event of
         KeyEvent KeyRightalt Released -> (,#modeChangeState .~ Nothing) case mk of
             Nothing -> \AppState{..} -> simpleAct $ SetMode previousMode
@@ -425,12 +425,9 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
                 KeyT -> simpleAct $ SetMode TV
                 KeyComma -> simpleAct $ SetMode Sending
                 _ -> [LogEvent $ "Key does not correspond to any mode: " <> showT k]
-        _ ->
-            ( const []
-            , case event of
-                KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?~ Just k
-                _ -> id
-            )
+        _ -> (mempty,) case event of
+            KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?~ Just k
+            _ -> id
     _ -> (,id) \AppState{..} -> case mode of
         Idle -> []
         Quiet -> []
@@ -534,7 +531,7 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
     irOnce = simpleAct .: SendIR IROnce
     irHold = \case
         Pressed -> simpleAct .: SendIR IRStart
-        Repeated -> const $ const []
+        Repeated -> mempty
         Released -> simpleAct .: SendIR IRStop
     hueInterval = 16 * if ctrl then 16 else if shift then 4 else 1
     clampedAdd m a b = b + min (m - b) a -- TODO better implementation? maybe in library? else, this is presumably commutative in last two args (ditto below)
