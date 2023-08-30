@@ -54,8 +54,6 @@ import Spotify.Types.Tracks qualified as Spotify
 import Streamly.Data.Fold qualified as SF
 import Streamly.Data.Stream qualified as S
 import Streamly.Data.Stream.Prelude qualified as S
-import Streamly.Data.StreamK qualified as SK
-import Streamly.Internal.Data.Stream.StreamK qualified as SK (hoist)
 import System.Exit
 import System.IO
 import System.Process.Extra
@@ -204,7 +202,7 @@ main = do
                 )
                 . S.concatMap S.fromList
                 . S.mapM gets
-                . (SK.toStream . SK.hoist liftIO . SK.fromStream)
+                . S.morphInner liftIO
                 . S.append
                     ( -- flash all lights to show we have finished initialising
                       S.fromList
