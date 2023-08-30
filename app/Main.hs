@@ -202,7 +202,6 @@ main = do
                 )
                 . S.concatMap S.fromList
                 . S.mapM gets
-                . S.morphInner liftIO
                 . S.append
                     ( -- flash all lights to show we have finished initialising
                       S.fromList
@@ -219,6 +218,7 @@ main = do
                         $ enumerate <> [initialState.previousMode, initialState.mode]
                     )
                 . S.cons (const [LogEvent "Starting..."])
+                . S.morphInner liftIO
                 $ S.parList
                     id
                     [ scanStream
