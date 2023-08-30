@@ -212,7 +212,9 @@ main = do
                         -- but then there's no real harm, except that and that we have to repeat the initial states
                         -- and we don't display the red LED
                         -- and we'd quite like to set them all off briefly to make it clearer we've finished
+                        -- and we get a confusing "LED is already off: " message about Idle mode
                         -- anyway, easy to solve - just split apart `SetMode` so we have separate action for LEDs
+                        -- but does that break useful abstractions?
                         . map SetMode
                         $ enumerate <> [initialState.previousMode, initialState.mode]
                     )
