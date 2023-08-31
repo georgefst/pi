@@ -85,7 +85,7 @@ instance ParseRecord Opts where
 
 data AppState = AppState
     { activeLEDs :: Map Int GPIO.Handle
-    , lifxDevices :: Stream.Stream (Device, LightState)
+    , bulbs :: Stream.Stream (Device, LightState)
     , httpConnectionManager :: Manager
     , keySendSocket :: Socket
     , mode :: Mode
@@ -164,7 +164,7 @@ main = do
     let initialState =
             AppState
                 { activeLEDs = mempty
-                , lifxDevices = Stream.cycle ds
+                , bulbs = Stream.cycle ds
                 , mode = Idle
                 , previousMode = Normal
                 , lightColourCache = Nothing
@@ -321,17 +321,17 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
             void
                 . sendTo sock (B.pack [fromIntegral $ fromEnum k, fromIntegral $ fromEnum e])
                 . (SockAddrInet opts.keySendPort . (.unIP))
-    GetCurrentLight -> fst . Stream.head <$> use #lifxDevices
+    GetCurrentLight -> fst . Stream.head <$> use #bulbs
     GetLightColourCache -> use #lightColourCache
     SetLightColourCache l -> #lightColourCache ?= l
     UnsetLightColourCache -> #lightColourCache .= Nothing
     LightReScan ->
         maybe
             (logMessage "No LIFX devices found during re-scan - retaining old list")
-            (\ds -> #lifxDevices .= Stream.cycle ds >> logMessage ("LIFX devices found: " <> showT (toList ds)))
+            (\ds -> #bulbs .= Stream.cycle ds >> logMessage ("LIFX devices found: " <> showT (toList ds)))
             . nonEmpty
             =<< discoverLifx
-    NextLight -> #lifxDevices %= Stream.tail
+    NextLight -> #bulbs %= Stream.tail
     GetLightPower l -> statePowerToBool <$> sendMessage l GetPower
     SetLightPower l p -> sendMessage l $ SetPower p
     GetLightColour l -> (.hsbk) <$> sendMessage l GetColor
