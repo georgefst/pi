@@ -9,79 +9,64 @@ module Evdev.Stream (
     newDevices',
     readEvents,
     readEventsMany,
-    readEventsMany',
 ) where
 
 import Control.Concurrent
 import Control.Monad.IO.Class
 import Data.Bifunctor (first)
+import Data.Bitraversable (bisequence)
 import Data.Bool
 import Data.Either.Extra
 import Data.Functor
 import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Tuple.Extra (fst3, thd3)
+import Data.Tuple.Extra (fst3, thd3, (&&&))
 import Evdev
 import RawFilePath.Directory
 import Streamly.Data.Stream.Prelude qualified as S
 import Streamly.Internal.Data.Stream qualified as SI
 import System.FilePath.ByteString
 import System.INotify qualified as INotify
-import System.IO
 import System.IO.Error
 
+-- TODO provide a 'group' operation on streams, representing packets as sets
+
+-- | Read all events from a device.
+readEvents :: (MonadIO m) => Device -> SI.Stream m (Either IOError Event)
+readEvents = SI.repeatM . liftIO . tryIOError . nextEvent
+
+-- readEventsUntilError :: Device -> SI.Stream IO Event
+-- readEventsUntilError = fmap (fromRight (error "can't happen")) . S.takeWhile isRight . readEvents
+-- readEventsUntilError' :: Device -> SI.Stream IO (Either IOError Event) -- we know the only `Left` is the last element
+-- readEventsUntilError' = takeUntil isRight . readEvents
+
+{- | Concurrently read events from multiple devices.
+Invariant: events for a device fall between appropriate added and removed events.
+-}
+readEventsMany :: (S.MonadAsync m) => SI.Stream m Device -> SI.Stream m (Device, Either (Either () IOError) Event)
 -- TODO better to only end the stream only upon "No such device" rather than _all_ IO errors?
 -- TODO use custom types to make this clearer? stream consists of `(Device, Conn | Disconn IOError | Event Event)`
--- invariant: events for a device fall between appropriate added and removed events
-readEventsMany' :: (S.MonadAsync m) => SI.Stream m Device -> SI.Stream m (Device, Either (Either () IOError) Event)
-readEventsMany' =
+readEventsMany =
     S.parConcatMap id \d ->
         fmap (d,)
             . S.cons (Left (Left ()))
             . fmap (first Right)
             . takeUntil isLeft
-            $ readEvents' d
-
--- TODO use this as the root of all other interactions
-readEvents' :: (MonadIO m) => Device -> SI.Stream m (Either IOError Event)
-readEvents' = SI.repeatM . liftIO . tryIOError . nextEvent
-
--- readEventsUntilError :: Device -> SI.Stream IO Event
--- readEventsUntilError = fmap (fromRight (error "can't happen")) . S.takeWhile isRight . readEvents'
--- readEventsUntilError' :: Device -> SI.Stream IO (Either IOError Event) -- we know the only `Left` is the last element
--- readEventsUntilError' = takeUntil isRight . readEvents'
-
--- TODO provide a 'group' operation on streams, representing packets as sets
-
--- | Read all events from a device.
-readEvents :: (MonadIO m) => Device -> S.Stream m Event
-readEvents = unfoldM . liftIO . printIOError' . nextEvent
-
-{- | Concurrently read events from multiple devices.
-If a read fails on one, the exception is printed to stderr and the stream continues to read from the others.
--}
-readEventsMany :: (S.MonadAsync m) => S.Stream m Device -> S.Stream m (Device, Event)
-readEventsMany = S.parConcatMap id \d -> (d,) <$> readEvents d
+            $ readEvents d
 
 -- | Create devices for all paths in the stream.
-makeDevices :: (MonadIO m) => S.Stream m RawFilePath -> S.Stream m Device
-makeDevices = S.mapM $ liftIO . newDevice
+makeDevices :: (MonadIO m) => S.Stream m RawFilePath -> S.Stream m (Either (RawFilePath, IOError) Device)
+makeDevices = S.mapM $ liftIO . fmap (uncurry $ first . (,)) . bisequence . (pure &&& tryIOError . newDevice)
 
--- {- | All events on all valid devices (in /\/dev\/input/).
--- Prints any exceptions.
-
--- > allEvents == readEventsMany allDevices
--- -}
+-- | All events on all devices. Silently discards devices on error
 allEvents :: (S.MonadAsync m) => S.Stream m (Device, Event)
-allEvents = readEventsMany allDevices
+-- TODO do I want more or less of these sorts of wrappers?
+allEvents = S.mapMaybe (traverse eitherToMaybe) $ readEventsMany $ S.mapMaybe eitherToMaybe allDevices
 
 -- TODO call this 'oldDevices' or 'existingDevices', and have 'allDevices' include 'newDevices'?
 
-{- | All valid existing devices (in /\/dev\/input/).
-If a device can't be initialised for an individual path, then the exception is printed,
-and the function continues to try to initialise the others.
--}
-allDevices :: (MonadIO m) => S.Stream m Device
+-- | All existing devices.
+allDevices :: (MonadIO m) => SI.Stream m (Either (RawFilePath, IOError) Device)
 allDevices =
     let paths =
             S.filterM (liftIO . doesFileExist) $
@@ -89,7 +74,7 @@ allDevices =
                     SI.unCross $
                         (SI.mkCross . S.fromList)
                             =<< SI.mkCross (S.fromEffect (reverse <$> liftIO (listDirectory evdevDir)))
-     in S.mapMaybeM (liftIO . printIOError' . newDevice) paths
+     in makeDevices paths
 
 -- TODO perhaps streamly-fsnotify ought to use RawFilePath?
 -- TODO fix this - we don't always seem to get notified of permission changes -
@@ -112,6 +97,7 @@ newDevices =
                             -- success - return new device
                             (Just d, watching)
                         Left e ->
+                            -- TODO expose this to be logged somehow
                             -- fail - if it's only a permission error then watch for changes on device
                             (Nothing, applyWhen (isPermissionError e) (Set.insert p) watching)
                 INotify.Modified{isDirectory = False, maybeFilePath = Just p} ->
@@ -130,7 +116,7 @@ newDevices =
                     -- device is gone - no longer watch for changes
                     return (Nothing, Set.delete p watching)
                 _ -> return (Nothing, watching)
-        tryNewDevice = printIOError . newDevice
+        tryNewDevice = tryIOError . newDevice
      in
         scanMaybe watch Set.empty $ watchDirectory evdevDir
 
@@ -139,11 +125,11 @@ newDevices =
 {- | This is a workaround for bugginess in 'newDevices' when it comes to waiting for permissions on a new device
 - it just waits the number of microseconds given before trying to read from the device.
 -}
-newDevices' :: (MonadIO m) => Int -> S.Stream m Device
-newDevices' delay = flip S.mapMaybeM (watchDirectory evdevDir) \case
+newDevices' :: (MonadIO m) => Int -> SI.Stream m (Either (RawFilePath, IOError) Device)
+newDevices' delay = makeDevices $ flip S.mapMaybeM (watchDirectory evdevDir) \case
     INotify.Created False p -> do
         liftIO $ threadDelay delay
-        eitherToMaybe <$> liftIO (printIOError $ newDevice $ evdevDir </> p)
+        pure $ Just $ evdevDir </> p
     _ -> return Nothing
 
 -- {- Util -}
@@ -154,24 +140,6 @@ newDevices' delay = flip S.mapMaybeM (watchDirectory evdevDir) \case
 -- TODO perhaps some way to use State monad instead?
 scanMaybe :: (Monad m) => (s -> a -> m (Maybe b, s)) -> s -> S.Stream m a -> S.Stream m b
 scanMaybe f e = S.mapMaybe fst . SI.scanlM' (f . snd) (pure (Nothing, e))
-
--- specialised form of S.unfoldrM
--- this should perhaps be in streamly (it's in monad-loops)
--- TODO this is rather ugly - can it be done in terms of the Unfold type?
-unfoldM :: (Monad m) => m (Maybe a) -> S.Stream m a
-unfoldM x = S.unfoldrM (const $ fmap (,()) <$> x) ()
-
--- TODO get rid - this isn't a great approach for a library
--- like tryIOError, but also prints the error to stderr
-printIOError :: IO a -> IO (Either IOError a)
-printIOError f =
-    (Right <$> f) `catchIOError` \err -> do
-        hPrint stderr err
-        return $ Left err
-
--- variant of printIOError which doesn't care what the exception was
-printIOError' :: IO a -> IO (Maybe a)
-printIOError' = fmap eitherToMaybe . printIOError
 
 -- apply the function iff the guard passes
 applyWhen :: Bool -> (a -> a) -> a -> a

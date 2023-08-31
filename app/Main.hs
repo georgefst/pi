@@ -236,7 +236,16 @@ main = do
                         )
                         -- I can't find a reliable heuristic for "basically a keyboard" so we filter by name
                         . S.filterM (fmap ((`elem` opts.keyboard) . decodeUtf8) . liftIO . Evdev.deviceName . fst)
-                        . readEventsMany'
+                        . readEventsMany
+                        . S.mapMaybeM
+                            ( either
+                                ( \(p, e) ->
+                                    logMessage
+                                        ("Couldn't create evdev device from " <> decodeUtf8 p <> ": " <> showT e)
+                                        >> pure Nothing
+                                )
+                                (pure . Just)
+                            )
                         . S.append allDevices
                         $ newDevices' 1_000_000
                     , S.repeatM $ const . pure <$> liftIO (takeMVar eventMVar)
