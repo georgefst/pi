@@ -38,7 +38,7 @@ readEvents = unfoldM . liftIO . printIOError' . nextEvent
 If a read fails on one, the exception is printed to stderr and the stream continues to read from the others.
 -}
 readEventsMany :: (S.MonadAsync m) => S.Stream m Device -> S.Stream m (Device, Event)
-readEventsMany = S.parConcat id . fmap (\d -> (d,) <$> readEvents d)
+readEventsMany = S.parConcatMap id \d -> (d,) <$> readEvents d
 
 -- | Create devices for all paths in the stream.
 makeDevices :: (MonadIO m) => S.Stream m RawFilePath -> S.Stream m Device
@@ -136,7 +136,7 @@ scanMaybe f e = S.mapMaybe fst . SI.scanlM' (f . snd) (pure (Nothing, e))
 -- this should perhaps be in streamly (it's in monad-loops)
 -- TODO this is rather ugly - can it be done in terms of the Unfold type?
 unfoldM :: (Monad m) => m (Maybe a) -> S.Stream m a
-unfoldM x = S.unfoldrM (const $ fmap (,undefined) <$> x) undefined
+unfoldM x = S.unfoldrM (const $ fmap (,()) <$> x) ()
 
 -- TODO get rid - this isn't a great approach for a library
 -- like tryIOError, but also prints the error to stderr
