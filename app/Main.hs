@@ -7,6 +7,7 @@ import Util.Lifx
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Monad
+import Control.Monad.Catch
 import Control.Monad.Except
 import Control.Monad.Freer
 import Control.Monad.Log (MonadLog, logMessage, runLoggingT)
@@ -105,6 +106,8 @@ data Mode
 data Error where
     Error :: (Show a) => {title :: Text, body :: a} -> Error
     SimpleError :: Text -> Error
+catchIO :: (MonadCatch m, MonadError Error m) => m a -> m a
+catchIO = handleIOError $ throwError . Error "IO error when running action"
 
 main :: IO ()
 main = do
@@ -304,11 +307,11 @@ data ActionOpts = ActionOpts
     }
 runAction ::
     forall m a.
-    (MonadIO m, MonadState AppState m, MonadLifx m, MonadLog Text m, MonadError Error m) =>
+    (MonadIO m, MonadCatch m, MonadState AppState m, MonadLifx m, MonadLog Text m, MonadError Error m) =>
     ActionOpts ->
     Action a ->
     m a
-runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative fields -}} = \case
+runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative fields -}} = (.) catchIO \case
     Exit -> liftIO exitSuccess
     SetMode new -> do
         old <- use #mode
