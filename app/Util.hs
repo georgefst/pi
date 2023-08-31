@@ -9,10 +9,12 @@ import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Either.Extra
+import Data.Function
 import Data.List.Extra
 import Data.Text qualified as T
 import Data.Text.Encoding hiding (Some)
 import Data.Time (NominalDiffTime, nominalDiffTimeToSeconds)
+import Evdev qualified
 import Evdev.Codes qualified as Evdev
 import Network.Socket
 import Options.Generic
@@ -89,6 +91,11 @@ instance ParseField Spotify.DeviceID where
 instance ParseFields Spotify.DeviceID
 instance ParseRecord Spotify.DeviceID where
     parseRecord = fmap getOnly parseRecord
+
+instance Eq Evdev.Device where
+    (==) = (==) `on` Evdev.devicePath
+instance Ord Evdev.Device where
+    compare = compare `on` Evdev.devicePath
 
 threadDelay' :: NominalDiffTime -> IO ()
 threadDelay' = threadDelay . round . (* 1_000_000) . nominalDiffTimeToSeconds

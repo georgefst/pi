@@ -9,24 +9,47 @@ module Evdev.Stream (
     newDevices',
     readEvents,
     readEventsMany,
+    readEventsMany',
 ) where
 
 import Control.Concurrent
 import Control.Monad.IO.Class
+import Data.Bifunctor (first)
 import Data.Bool
 import Data.Either.Extra
 import Data.Functor
 import Data.Set (Set)
 import Data.Set qualified as Set
+import Data.Tuple.Extra (fst3, thd3)
 import Evdev
 import RawFilePath.Directory
-import Streamly.Data.Stream qualified as S
 import Streamly.Data.Stream.Prelude qualified as S
 import Streamly.Internal.Data.Stream qualified as SI
 import System.FilePath.ByteString
 import System.INotify qualified as INotify
 import System.IO
 import System.IO.Error
+
+-- TODO better to only end the stream only upon "No such device" rather than _all_ IO errors?
+-- TODO use custom types to make this clearer? stream consists of `(Device, Conn | Disconn IOError | Event Event)`
+-- invariant: events for a device fall between appropriate added and removed events
+readEventsMany' :: (S.MonadAsync m) => SI.Stream m Device -> SI.Stream m (Device, Either (Either () IOError) Event)
+readEventsMany' =
+    S.parConcatMap id \d ->
+        fmap (d,)
+            . S.cons (Left (Left ()))
+            . fmap (first Right)
+            . takeUntil isLeft
+            $ readEvents' d
+
+-- TODO use this as the root of all other interactions
+readEvents' :: (MonadIO m) => Device -> SI.Stream m (Either IOError Event)
+readEvents' = SI.repeatM . liftIO . tryIOError . nextEvent
+
+-- readEventsUntilError :: Device -> SI.Stream IO Event
+-- readEventsUntilError = fmap (fromRight (error "can't happen")) . S.takeWhile isRight . readEvents'
+-- readEventsUntilError' :: Device -> SI.Stream IO (Either IOError Event) -- we know the only `Left` is the last element
+-- readEventsUntilError' = takeUntil isRight . readEvents'
 
 -- TODO provide a 'group' operation on streams, representing packets as sets
 
@@ -163,3 +186,12 @@ watchDirectory path = SI.unCross do
         wd <- INotify.addWatch inotify [INotify.Create] path (putMVar m)
         pure (m, wd)
     SI.mkCross $ S.repeatM $ liftIO $ takeMVar m
+
+-- TODO I suspect there's a better way to implement this
+-- like `S.takeWhile . (not .)` but takes one more element
+takeUntil :: (Monad m) => (a -> Bool) -> SI.Stream m a -> SI.Stream m a
+takeUntil f =
+    S.catMaybes
+        . fmap thd3
+        . S.takeWhile fst3
+        . flip SI.scanl' (True, True, Nothing) \(_, oldWasGood, _) new -> (oldWasGood, not $ f new, Just new)

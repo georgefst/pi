@@ -21,6 +21,8 @@ import Data.List.NonEmpty (nonEmpty)
 import Data.Map (Map)
 import Data.Map qualified as Map
 import Data.Maybe
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Stream.Infinite qualified as Stream
 import Data.Text qualified as T
 import Data.Text.Encoding
@@ -53,7 +55,6 @@ import Spotify.Types.Search qualified as Spotify
 import Spotify.Types.Simple qualified as Spotify
 import Spotify.Types.Tracks qualified as Spotify
 import Streamly.Data.Fold qualified as SF
-import Streamly.Data.Stream qualified as S
 import Streamly.Data.Stream.Prelude qualified as S
 import System.Exit
 import System.IO
@@ -86,6 +87,7 @@ instance ParseRecord Opts where
 data AppState = AppState
     { activeLEDs :: Map Int GPIO.Handle
     , bulbs :: Stream.Stream (Device, LightState)
+    , keyboards :: Set Evdev.Device
     , httpConnectionManager :: Manager
     , keySendSocket :: Socket
     , mode :: Mode
@@ -165,6 +167,7 @@ main = do
             AppState
                 { activeLEDs = mempty
                 , bulbs = Stream.cycle ds
+                , keyboards = mempty
                 , mode = Idle
                 , previousMode = Normal
                 , lightColourCache = Nothing
@@ -224,17 +227,16 @@ main = do
                     id
                     [ scanStream
                         (KeyboardState False False False Nothing Nothing)
-                        (dispatchKeys $ opts & \Opts{..} -> KeyboardOpts{..})
-                        . fmap (Evdev.eventData . snd)
-                        . readEventsMany
+                        ( uncurry \d ->
+                            either
+                                ( (runState . pure . pure . pure . ActionEvent mempty . send)
+                                    . either (\() -> AddKeyboard d) (RemoveKeyboard d)
+                                )
+                                (dispatchKeys (opts & \Opts{..} -> KeyboardOpts{..}) . Evdev.eventData)
+                        )
                         -- I can't find a reliable heuristic for "basically a keyboard" so we filter by name
-                        . S.filterM
-                            ( \dev -> do
-                                name <- decodeUtf8 <$> liftIO (Evdev.deviceName dev)
-                                let good = name `elem` opts.keyboard
-                                logMessage $ "Evdev device " <> bool "ignored" "added" good <> ": " <> name
-                                pure good
-                            )
+                        . S.filterM (fmap ((`elem` opts.keyboard) . decodeUtf8) . liftIO . Evdev.deviceName . fst)
+                        . readEventsMany'
                         . S.append allDevices
                         $ newDevices' 1_000_000
                     , S.repeatM $ const . pure <$> liftIO (takeMVar eventMVar)
@@ -252,6 +254,8 @@ data Action a where
     SetMode :: Mode -> Action ()
     ResetError :: Action ()
     Sleep :: NominalDiffTime -> Action ()
+    AddKeyboard :: Evdev.Device -> Action ()
+    RemoveKeyboard :: Evdev.Device -> IOError -> Action ()
     SendKey :: Key -> KeyEvent -> Action ()
     GetCurrentLight :: Action Device
     GetLightColourCache :: Action (Maybe HSBK)
@@ -304,9 +308,11 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         for_ (opts.modeLED old) $ flip setLED False
         for_ (opts.modeLED new) $ flip setLED True
         case old of
+            Idle -> liftIO . traverse_ Evdev.grabDevice =<< use #keyboards
             Quiet -> setSystemLEDs [("ACT", "mmc0"), ("PWR", "default-on")]
             _ -> pure ()
         case new of
+            Idle -> liftIO . traverse_ Evdev.ungrabDevice =<< use #keyboards
             Quiet -> setSystemLEDs [("ACT", "none"), ("PWR", "none")]
             _ -> pure ()
       where
@@ -314,6 +320,12 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
             liftIO $ readProcess "sudo" ["tee", "/sys/class/leds/" <> l <> "/trigger"] (v <> "\n")
     ResetError -> setLED opts.ledErrorPin False
     Sleep t -> liftIO $ threadDelay' t
+    AddKeyboard d -> do
+        -- TODO unify "always grabbed unless in Idle mode" logic somewhere?
+        mode <- use #mode
+        when (mode /= Idle) $ liftIO $ Evdev.grabDevice d
+        #keyboards %= Set.insert d
+    RemoveKeyboard d _e -> #keyboards %= Set.delete d
     SendKey k e -> do
         -- TODO DRY this with my `net-evdev` repo
         sock <- use #keySendSocket
