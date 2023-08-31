@@ -484,6 +484,7 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
             _ -> []
         Normal -> case event of
             KeyEvent KeyEsc Pressed | ctrl -> simpleAct Exit
+            KeyEvent KeyR Pressed | ctrl -> simpleAct ResetError
             KeyEvent KeyP Pressed ->
                 if ctrl
                     then simpleAct ToggleHifiPlug
