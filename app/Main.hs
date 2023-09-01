@@ -270,15 +270,13 @@ data Action a where
     RemoveKeyboard :: Evdev.Device -> IOError -> Action ()
     SendKey :: Key -> KeyEvent -> Action ()
     GetCurrentLight :: Action Device
-    GetLightColourCache :: Action (Maybe HSBK)
-    SetLightColourCache :: HSBK -> Action ()
-    UnsetLightColourCache :: Action ()
     LightReScan :: Action ()
     NextLight :: Action ()
     GetLightPower :: Device -> Action Bool
     SetLightPower :: Device -> Bool -> Action ()
-    GetLightColour :: Device -> Action HSBK
-    SetLightColour :: Device -> NominalDiffTime -> HSBK -> Action ()
+    UnsetLightColourCache :: Action ()
+    GetLightColour :: Bool -> Device -> Action HSBK
+    SetLightColour :: Bool -> Device -> NominalDiffTime -> HSBK -> Action ()
     GetLightState :: Device -> Action LightState
     GetLightName :: Device -> Action Text
     Mpris :: Text -> Action ()
@@ -346,9 +344,6 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                 . sendTo sock (B.pack [fromIntegral $ fromEnum k, fromIntegral $ fromEnum e])
                 . (SockAddrInet opts.keySendPort . (.unIP))
     GetCurrentLight -> fst . Stream.head <$> use #bulbs
-    GetLightColourCache -> use #lightColourCache
-    SetLightColourCache l -> #lightColourCache ?= l
-    UnsetLightColourCache -> #lightColourCache .= Nothing
     LightReScan ->
         maybe
             (logMessage "No LIFX devices found during re-scan - retaining old list")
@@ -358,8 +353,14 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
     NextLight -> #bulbs %= Stream.tail
     GetLightPower l -> statePowerToBool <$> sendMessage l GetPower
     SetLightPower l p -> sendMessage l $ SetPower p
-    GetLightColour l -> (.hsbk) <$> sendMessage l GetColor
-    SetLightColour l d c -> sendMessage l $ SetColor c d
+    UnsetLightColourCache -> #lightColourCache .= Nothing
+    GetLightColour useCache l ->
+        if useCache
+            then maybe (throwError $ SimpleError "Light colour cache is empty") pure =<< use #lightColourCache
+            else (.hsbk) <$> sendMessage l GetColor
+    SetLightColour setCache l d c -> do
+        when setCache $ #lightColourCache ?= c
+        sendMessage l $ SetColor c d
     GetLightState l -> sendMessage l GetColor
     GetLightName l -> (.label) <$> sendMessage l GetColor
     Mpris cmd -> do
@@ -500,9 +501,9 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
                 l <- send GetCurrentLight
                 LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
                 when wasOff $ send $ SetLightPower l True
-                send $ SetLightColour l opts.flashTime $ hsbk & #brightness %~ (`div` 2)
+                send $ SetLightColour False l opts.flashTime $ hsbk & #brightness %~ (`div` 2)
                 send $ Sleep opts.flashTime
-                send $ SetLightColour l opts.flashTime hsbk
+                send $ SetLightColour False l opts.flashTime hsbk
                 when wasOff $ send $ SetLightPower l False
             KeyEvent KeyVolumeup e -> irHold e IRHifi "KEY_VOLUMEUP"
             KeyEvent KeyVolumedown e -> irHold e IRHifi "KEY_VOLUMEDOWN"
@@ -588,17 +589,12 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
     hueInterval = 16 * if ctrl then 16 else if shift then 4 else 1
     clampedAdd m a b = b + min (m - b) a -- TODO better implementation? maybe in library? else, this is presumably commutative in last two args (ditto below)
     clampedSub m a b = b - min (b - m) a
-    modifyLight e f = act do
-        l <- send GetCurrentLight
-        case e of
-            Pressed -> cacheAndSet l . f =<< send (GetLightColour l)
-            -- the `Nothing` case here shouldn't actually happen - we can assume cache is set by last key event
-            Repeated -> cacheAndSet l . f =<< maybe (send $ GetLightColour l) pure =<< send GetLightColourCache
-            Released -> send UnsetLightColourCache
+    modifyLight e f = act case e of
+        Pressed -> setColour False =<< send GetCurrentLight
+        Repeated -> setColour True =<< send GetCurrentLight
+        Released -> send UnsetLightColourCache
       where
-        cacheAndSet l c = do
-            send $ SetLightColourCache c
-            send $ SetLightColour l 0 c
+        setColour useCache l = send . SetLightColour True l 0 . f =<< send (GetLightColour useCache l)
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
     startSpotifySearch t = (const [LogEvent "Waiting for keyboard input"], #typing ?~ (TypingSpotifySearch t, []))
 
