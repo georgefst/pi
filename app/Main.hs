@@ -36,7 +36,8 @@ import Evdev qualified
 import Evdev.Codes (Key (..))
 import Evdev.Stream
 import GHC.Records (HasField)
-import Lifx.Lan hiding (SetLightPower)
+import Lifx.Lan (HSBK, MonadLifx)
+import Lifx.Lan qualified as Lifx
 import Network.HTTP.Client
 import Network.HTTP.Types
 import Network.Socket
@@ -87,7 +88,7 @@ instance ParseRecord Opts where
 
 data AppState = AppState
     { activeLEDs :: Map Int GPIO.Handle
-    , bulbs :: Stream.Stream (Device, LightState)
+    , bulbs :: Stream.Stream (Lifx.Device, Lifx.LightState)
     , keyboards :: Set Evdev.Device
     , httpConnectionManager :: Manager
     , keySendSocket :: Socket
@@ -165,7 +166,7 @@ main = do
         maybe (T.putStrLn "No LIFX devices found" >> exitFailure) pure
             . nonEmpty
             =<< either (\e -> T.putStrLn ("LIFX startup error: " <> showT e) >> exitFailure) pure
-            =<< runLifxT (lifxTime opts.lifxTimeout) (Just $ fromIntegral opts.lifxPort * 2) discoverLifx
+            =<< Lifx.runLifxT (lifxTime opts.lifxTimeout) (Just $ fromIntegral opts.lifxPort * 2) discoverLifx
     let initialState =
             AppState
                 { activeLEDs = mempty
@@ -269,16 +270,16 @@ data Action a where
     AddKeyboard :: Evdev.Device -> Action ()
     RemoveKeyboard :: Evdev.Device -> IOError -> Action ()
     SendKey :: Key -> KeyEvent -> Action ()
-    GetCurrentLight :: Action Device
+    GetCurrentLight :: Action Lifx.Device
     LightReScan :: Action ()
     NextLight :: Action ()
-    GetLightPower :: Device -> Action Bool
-    SetLightPower :: Device -> Bool -> Action ()
+    GetLightPower :: Lifx.Device -> Action Bool
+    SetLightPower :: Lifx.Device -> Bool -> Action ()
     UnsetLightColourCache :: Action ()
-    GetLightColour :: Bool -> Device -> Action HSBK
-    SetLightColour :: Bool -> Device -> NominalDiffTime -> HSBK -> Action ()
-    GetLightState :: Device -> Action LightState
-    GetLightName :: Device -> Action Text
+    GetLightColour :: Bool -> Lifx.Device -> Action HSBK
+    SetLightColour :: Bool -> Lifx.Device -> NominalDiffTime -> HSBK -> Action ()
+    GetLightState :: Lifx.Device -> Action Lifx.LightState
+    GetLightName :: Lifx.Device -> Action Text
     Mpris :: Text -> Action ()
     SendIR :: IRCmdType -> IRDev -> Text -> Action ()
     ToggleHifiPlug :: Action ()
@@ -351,18 +352,18 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
             . nonEmpty
             =<< discoverLifx
     NextLight -> #bulbs %= Stream.tail
-    GetLightPower l -> statePowerToBool <$> sendMessage l GetPower
-    SetLightPower l p -> sendMessage l $ SetPower p
+    GetLightPower l -> statePowerToBool <$> Lifx.sendMessage l Lifx.GetPower
+    SetLightPower l p -> Lifx.sendMessage l $ Lifx.SetPower p
     UnsetLightColourCache -> #lightColourCache .= Nothing
     GetLightColour useCache l ->
         if useCache
             then maybe (throwError $ SimpleError "Light colour cache is empty") pure =<< use #lightColourCache
-            else (.hsbk) <$> sendMessage l GetColor
+            else (.hsbk) <$> Lifx.sendMessage l Lifx.GetColor
     SetLightColour setCache l d c -> do
         when setCache $ #lightColourCache ?= c
-        sendMessage l $ SetColor c d
-    GetLightState l -> sendMessage l GetColor
-    GetLightName l -> (.label) <$> sendMessage l GetColor
+        Lifx.sendMessage l $ Lifx.SetColor c d
+    GetLightState l -> Lifx.sendMessage l Lifx.GetColor
+    GetLightName l -> (.label) <$> Lifx.sendMessage l Lifx.GetColor
     Mpris cmd -> do
         service <-
             maybe
@@ -499,7 +500,7 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
             KeyEvent KeyS Pressed -> act do
                 send NextLight
                 l <- send GetCurrentLight
-                LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
+                Lifx.LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
                 when wasOff $ send $ SetLightPower l True
                 send $ SetLightColour False l opts.flashTime $ hsbk & #brightness %~ (`div` 2)
                 send $ Sleep opts.flashTime
