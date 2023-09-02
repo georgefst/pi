@@ -21,6 +21,8 @@ import Options.Generic
 import RawFilePath
 import Spotify.Types.Misc qualified as Spotify
 import Streamly.Data.Stream qualified as S
+import Streamly.Data.StreamK qualified as SK
+import Streamly.Internal.Data.Stream.StreamK qualified as SK
 import System.Exit
 
 showT :: (Show a) => a -> Text
@@ -102,6 +104,12 @@ threadDelay' = threadDelay . round . (* 1_000_000) . nominalDiffTimeToSeconds
 
 mwhen :: (Monoid p) => Bool -> p -> p
 mwhen b x = if b then x else mempty
+
+-- TODO is there a better way to implement this than all this faffing with `SK`?
+streamWithInit :: (Monad m) => m t -> (t -> S.Stream m a) -> S.Stream m a
+streamWithInit init_ stream = SK.toStream $ SK.unCross do
+    m <- SK.mkCross $ SK.fromStream $ S.fromEffect init_
+    SK.mkCross . SK.fromStream $ stream m
 
 -- bool indicates whether shift held
 -- TODO make this more complete and general and less anglocentric...

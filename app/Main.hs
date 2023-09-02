@@ -7,8 +7,6 @@ import Util
 import Util.GPIO qualified as GPIO
 import Util.Lifx
 
-import Control.Concurrent
-import Control.Concurrent.Async
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Freer
@@ -90,12 +88,6 @@ main = do
     -- TODO initialisation stuff - encapsulate this better somehow, without it being killed by LIFX failure
     eventSocket <- socket AF_INET Datagram defaultProtocol
     bind eventSocket $ SockAddrInet (fromIntegral opts.udpPort) 0
-    -- TODO disabled until logging is better - it's easier to see events when monitoring through a separate script
-    -- let gpioMonitor =
-    --         GPIO.mon opts.gpioChip (putMVar eventMVar . LogEvent) opts.buttonDebounce opts.buttonPin $
-    --             -- TODO we'd ideally use this is a power button, but for noew we just monitor it
-    --             -- since there have been issues with electrical interference causing spurious triggers
-    --             putMVar eventMVar . LogEvent . ("GPIO button pressed: " <>) . showT =<< getCurrentTime
     let modeLED = \case
             Keyboard.Idle -> Just opts.ledIdleModePin
             Keyboard.Quiet -> Nothing
@@ -122,10 +114,7 @@ main = do
                 }
         initialMode = Keyboard.Idle
 
-    race_
-        -- TODO disabled - see `gpioMonitor` definition
-        -- gpioMonitor
-        (forever $ threadDelay maxBound)
+    id
         . flip runLoggingT (liftIO . T.putStrLn)
         . flip evalStateT initialState
         . runLifxUntilSuccess
@@ -162,4 +151,7 @@ main = do
                     id
                     [ Keyboard.feed opts.keyboard initialMode (opts & \Opts{..} -> Keyboard.Opts{..})
                     , WebServer.feed opts.httpPort
+                    -- TODO disabled until logging is better
+                    -- it's easier to see events when monitoring through a separate script
+                    -- , GPIO.feed (opts & \Opts{..} -> GPIO.Opts{..})
                     ]

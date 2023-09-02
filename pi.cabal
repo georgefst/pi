@@ -12,6 +12,7 @@ executable pi
     other-modules:
         Evdev.Stream
         George.Core
+        George.Feed.GPIO
         George.Feed.Keyboard
         George.Feed.WebServer
         Util
