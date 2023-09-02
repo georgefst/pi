@@ -114,21 +114,19 @@ main = do
     eventMVar <- newEmptyMVar
 
     let
-        setLED :: (MonadState AppState m, MonadIO m) => Int -> Bool -> m ()
+        setLED :: (MonadState AppState m, MonadIO m, MonadLog Text m) => Int -> Bool -> m ()
         setLED pin =
             bool
                 ( use #activeLEDs <&> Map.lookup pin >>= \case
                     Just h -> GPIO.reset h >> modifying #activeLEDs (Map.delete pin)
-                    Nothing -> log' $ "LED is already off: " <> showT pin
+                    Nothing -> logMessage $ "LED is already off: " <> showT pin
                 )
                 ( use #activeLEDs <&> Map.lookup pin >>= \case
                     Nothing -> GPIO.set opts.gpioChip [pin] >>= modifying #activeLEDs . Map.insert pin
-                    Just _ -> log' $ "LED is already on: " <> showT pin
+                    Just _ -> logMessage $ "LED is already on: " <> showT pin
                 )
-          where
-            log' = liftIO . putMVar eventMVar . LogEvent
 
-        handleError :: (MonadIO m, MonadState AppState m) => Error -> m ()
+        handleError :: (MonadIO m, MonadState AppState m, MonadLog Text m) => Error -> m ()
         handleError err = do
             case err of
                 Error{title, body} -> do
@@ -300,7 +298,7 @@ data IRCmdType
 
 data ActionOpts = ActionOpts
     { ledErrorPin :: Int
-    , setLED :: forall m. (MonadState AppState m, MonadIO m) => Int -> Bool -> m ()
+    , setLED :: forall m. (MonadState AppState m, MonadLog Text m, MonadIO m) => Int -> Bool -> m ()
     , spotifyDeviceId :: Spotify.DeviceID
     , keySendPort :: PortNumber
     , keySendIps :: [IP]
