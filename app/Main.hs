@@ -2,7 +2,7 @@ module Main (main) where
 
 import George.Core
 import George.Feed.Keyboard qualified as Keyboard
-import George.Feed.WebServer
+import George.Feed.WebServer qualified as WebServer
 import Util
 import Util.GPIO qualified as GPIO
 import Util.Lifx
@@ -23,11 +23,9 @@ import Data.Maybe
 import Data.Stream.Infinite qualified as Stream
 import Data.Text.IO qualified as T
 import Data.Time
-import Data.Tuple.Extra
 import Data.Word
 import Lifx.Lan qualified as Lifx
 import Network.HTTP.Client
-import Network.HTTP.Types
 import Network.Socket
 import Network.Wai.Handler.Warp qualified as Warp
 import Optics
@@ -66,7 +64,6 @@ main :: IO ()
 main = do
     hSetBuffering stdout LineBuffering -- TODO necessary when running as systemd service - why? report upstream
     (opts :: Opts) <- getRecord "Pi"
-    eventMVar <- newEmptyMVar
 
     let
         setLED :: (MonadState AppState m, MonadIO m, MonadLog Text m) => Int -> Bool -> m ()
@@ -91,7 +88,6 @@ main = do
             setLED opts.ledErrorPin True
 
     -- TODO initialisation stuff - encapsulate this better somehow, without it being killed by LIFX failure
-    -- TODO even discounting LIFX issue, unclear how to do this in Streamly 0.9, as there's no `Monad (Stream IO)`
     eventSocket <- socket AF_INET Datagram defaultProtocol
     bind eventSocket $ SockAddrInet (fromIntegral opts.udpPort) 0
     -- TODO disabled until logging is better - it's easier to see events when monitoring through a separate script
@@ -127,16 +123,9 @@ main = do
         initialMode = Keyboard.Idle
 
     race_
-        ( Warp.runSettings
-            ( Warp.setLogger
-                (curry3 $ unless . statusIsSuccessful . snd3 <*> putMVar eventMVar . ErrorEvent . Error "HTTP error")
-                . Warp.setPort opts.httpPort
-                $ Warp.defaultSettings
-            )
-            (webServer $ liftIO . putMVar eventMVar)
-            -- TODO disabled - see `gpioMonitor` definition
-            -- `race_` gpioMonitor
-        )
+        -- TODO disabled - see `gpioMonitor` definition
+        -- gpioMonitor
+        (forever $ threadDelay maxBound)
         . flip runLoggingT (liftIO . T.putStrLn)
         . flip evalStateT initialState
         . runLifxUntilSuccess
@@ -172,5 +161,5 @@ main = do
                 $ S.parList
                     id
                     [ Keyboard.feed opts.keyboard initialMode (opts & \Opts{..} -> Keyboard.Opts{..})
-                    , S.repeatM $ pure <$> liftIO (takeMVar eventMVar)
+                    , WebServer.feed opts.httpPort
                     ]
