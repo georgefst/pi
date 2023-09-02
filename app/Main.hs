@@ -120,7 +120,7 @@ main = do
             (either (handleError . Error @() "Misc exception") (handleError . Error "LIFX error"))
             (lifxTime opts.lifxTimeout)
             (Just $ fromIntegral opts.lifxPort)
-        $ do
+        .
             S.fold
                 ( SF.drainMapM \case
                     ErrorEvent e -> handleError e
