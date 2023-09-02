@@ -1,3 +1,4 @@
+{- HLINT ignore "Redundant section" -}
 module George.Feed.Keyboard (feed, Opts (..), Mode (..)) where
 
 import George.Core
@@ -63,7 +64,7 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case event of
     KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
     KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
     KeyEvent KeyEsc Pressed | Just _ <- typing -> #typing .= Nothing >> pure [LogEvent "Discarding keyboard input"]
-    KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> #typing .= Nothing >> case t of
+    KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> (#typing .= Nothing >>) case t of
         TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
           where
             -- TODO why can't I de-indent this where? GHC bug?
@@ -75,7 +76,7 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case event of
                 pure [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
         _ -> pure []
     _ | Just mk <- modeChangeState -> case event of
-        KeyEvent KeyRightalt Released -> #modeChangeState .= Nothing >> case mk of
+        KeyEvent KeyRightalt Released -> (#modeChangeState .= Nothing >>) case mk of
             Nothing -> f previousMode
             Just k -> case k of
                 KeyEsc -> f Idle
