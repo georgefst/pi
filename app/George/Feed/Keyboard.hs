@@ -25,14 +25,12 @@ import Optics.State.Operators
 import Options.Generic
 import Spotify.Types.Search qualified as Spotify
 import Streamly.Data.Stream.Prelude qualified as S
-import Streamly.Data.Stream.Prelude qualified as Streamly
 
 data Opts = Opts
     { flashTime :: NominalDiffTime
     , modeLED :: Mode -> Maybe Int
     }
     deriving (Generic)
-
 
 data KeyboardState = KeyboardState
     { keyboards :: Set Evdev.Device
@@ -229,7 +227,7 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
     startSpotifySearch t = ([LogEvent "Waiting for keyboard input"], #typing ?~ (TypingSpotifySearch t, []))
 
-feed :: (Streamly.MonadAsync m, MonadLog Text m) => [Text] -> Mode -> Opts -> S.Stream m [Event]
+feed :: (S.MonadAsync m, MonadLog Text m) => [Text] -> Mode -> Opts -> S.Stream m [Event]
 feed keyboardNames initialMode opts =
     scanStream
         (KeyboardState mempty initialMode Normal False False False Nothing Nothing)
