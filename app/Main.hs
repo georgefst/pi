@@ -114,8 +114,7 @@ main = do
                 }
         initialMode = Keyboard.Idle
 
-    id
-        . flip runLoggingT (liftIO . T.putStrLn)
+    flip runLoggingT (liftIO . T.putStrLn)
         . flip evalStateT initialState
         . runLifxUntilSuccess
             (either (handleError . Error @() "Misc exception") (handleError . Error "LIFX error"))
