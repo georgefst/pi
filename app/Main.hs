@@ -120,37 +120,36 @@ main = do
             (either (handleError . Error @() "Misc exception") (handleError . Error "LIFX error"))
             (lifxTime opts.lifxTimeout)
             (Just $ fromIntegral opts.lifxPort)
-        .
-            S.fold
-                ( SF.drainMapM \case
-                    ErrorEvent e -> handleError e
-                    LogEvent t -> logMessage t
-                    ActionEvent f action -> (either handleError pure <=< runExceptT) $ runM do
-                        r <-
-                            action & translate \a -> do
-                                logMessage $ showT a
-                                runAction (opts & \Opts{..} -> ActionOpts{..}) a
-                        sendM . logMessage $ showT r
-                        sendM . liftIO $ f r
-                )
-                . S.concatMap S.fromList
-                . S.append
-                    -- flash all lights to show we have finished initialising
-                    ( S.fromList
-                        . map (pure . ActionEvent mempty . send)
-                        $ concatMap
-                            (\n -> [SetLED n True, Sleep 0.2, SetLED n False])
-                            (mapMaybe modeLED enumerate <> [opts.ledErrorPin])
-                            <> [Sleep 0.5]
-                            <> maybe mempty (pure . flip SetLED True) (modeLED initialMode)
-                    )
-                . S.cons [LogEvent "Starting..."]
-                . S.morphInner (lift . lift . lift)
-                $ S.parList
-                    id
-                    [ Keyboard.feed opts.keyboard initialMode (opts & \Opts{..} -> Keyboard.Opts{..})
-                    , WebServer.feed opts.httpPort
-                    -- TODO disabled until logging is better
-                    -- it's easier to see events when monitoring through a separate script
-                    -- , GPIO.feed (opts & \Opts{..} -> GPIO.Opts{..})
-                    ]
+        . S.fold
+            ( SF.drainMapM \case
+                ErrorEvent e -> handleError e
+                LogEvent t -> logMessage t
+                ActionEvent f action -> (either handleError pure <=< runExceptT) $ runM do
+                    r <-
+                        action & translate \a -> do
+                            logMessage $ showT a
+                            runAction (opts & \Opts{..} -> ActionOpts{..}) a
+                    sendM . logMessage $ showT r
+                    sendM . liftIO $ f r
+            )
+        . S.concatMap S.fromList
+        . S.append
+            -- flash all lights to show we have finished initialising
+            ( S.fromList
+                . map (pure . ActionEvent mempty . send)
+                $ concatMap
+                    (\n -> [SetLED n True, Sleep 0.2, SetLED n False])
+                    (mapMaybe modeLED enumerate <> [opts.ledErrorPin])
+                    <> [Sleep 0.5]
+                    <> maybe mempty (pure . flip SetLED True) (modeLED initialMode)
+            )
+        . S.cons [LogEvent "Starting..."]
+        . S.morphInner (lift . lift . lift)
+        $ S.parList
+            id
+            [ Keyboard.feed opts.keyboard initialMode (opts & \Opts{..} -> Keyboard.Opts{..})
+            , WebServer.feed opts.httpPort
+            -- TODO disabled until logging is better
+            -- it's easier to see events when monitoring through a separate script
+            -- , GPIO.feed (opts & \Opts{..} -> GPIO.Opts{..})
+            ]
