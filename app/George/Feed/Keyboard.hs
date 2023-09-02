@@ -230,7 +230,17 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
 feed :: (S.MonadAsync m, MonadLog Text m) => [Text] -> Mode -> Opts -> S.Stream m [Event]
 feed keyboardNames initialMode opts =
     scanStream
-        (KeyboardState mempty initialMode Normal False False False Nothing Nothing)
+        ( KeyboardState
+            { keyboards = mempty
+            , mode = initialMode
+            , previousMode = Normal
+            , shift = False
+            , ctrl = False
+            , alt = False
+            , modeChangeState = Nothing
+            , typing = Nothing
+            }
+        )
         ( uncurry \d ->
             runStateT
                 . either
