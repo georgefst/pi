@@ -11,6 +11,9 @@ executable pi
     hs-source-dirs: app
     other-modules:
         Evdev.Stream
+        George.Core
+        George.Feed.Keyboard
+        George.Feed.WebServer
         Util
         Util.GPIO
         Util.Lifx
