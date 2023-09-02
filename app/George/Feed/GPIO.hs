@@ -4,7 +4,6 @@ import George.Core
 import Util
 import Util.GPIO qualified as GPIO
 
-import Control.Concurrent
 import Control.Monad.IO.Class
 import Data.ByteString (ByteString)
 import Data.Time
@@ -17,18 +16,12 @@ data Opts = Opts
     }
 
 feed :: (S.MonadAsync m) => Opts -> S.Stream m [Event]
-feed opts = streamWithInit (liftIO newEmptyMVar) \m ->
-    (S.catMaybes . S.parList id)
-        [ S.fromEffect
-            . liftIO
-            $ (\() -> Nothing)
-                <$> GPIO.mon
-                    opts.gpioChip
-                    (putMVar m . pure . LogEvent)
-                    opts.buttonDebounce
-                    opts.buttonPin
-                    -- TODO we'd ideally use this is a power button, but for noew we just monitor it
-                    -- since there have been issues with electrical interference causing spurious triggers
-                    (putMVar m . pure . LogEvent . ("GPIO button pressed: " <>) . showT =<< getCurrentTime)
-        , S.repeatM $ Just <$> liftIO (takeMVar m)
-        ]
+feed opts = S.morphInner liftIO $ emitterToStream \f ->
+    GPIO.mon
+        opts.gpioChip
+        (f . pure . LogEvent)
+        opts.buttonDebounce
+        opts.buttonPin
+        -- TODO we'd ideally use this is a power button, but for noew we just monitor it
+        -- since there have been issues with electrical interference causing spurious triggers
+        (f . pure . LogEvent . ("GPIO button pressed: " <>) . showT =<< getCurrentTime)

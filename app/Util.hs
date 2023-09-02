@@ -20,7 +20,7 @@ import Network.Socket
 import Options.Generic
 import RawFilePath
 import Spotify.Types.Misc qualified as Spotify
-import Streamly.Data.Stream qualified as S
+import Streamly.Data.Stream.Prelude qualified as S
 import Streamly.Data.StreamK qualified as SK
 import Streamly.Internal.Data.Stream.StreamK qualified as SK
 import System.Exit
@@ -110,6 +110,14 @@ streamWithInit :: (Monad m) => m t -> (t -> S.Stream m a) -> S.Stream m a
 streamWithInit init_ stream = SK.toStream $ SK.unCross do
     m <- SK.mkCross $ SK.fromStream $ S.fromEffect init_
     SK.mkCross . SK.fromStream $ stream m
+
+-- TODO is there a better way to implement this? seems like a common pattern?
+emitterToStream :: (S.MonadAsync m) => ((a -> m ()) -> m ()) -> S.Stream m a
+emitterToStream f = streamWithInit (liftIO newEmptyMVar) \m ->
+    (S.catMaybes . S.parList id)
+        [ S.fromEffect $ (\() -> Nothing) <$> f (liftIO . putMVar m)
+        , S.repeatM $ Just <$> liftIO (takeMVar m)
+        ]
 
 -- bool indicates whether shift held
 -- TODO make this more complete and general and less anglocentric...

@@ -32,18 +32,11 @@ server f =
         okPlainText [] . (<> "\n") . show' =<< liftIO (takeMVar m)
 
 feed :: (S.MonadAsync m) => Warp.Port -> S.Stream m [Event]
-feed port =
-    streamWithInit (liftIO newEmptyMVar) \m ->
-        (S.catMaybes . S.parList id)
-            [ S.fromEffect $
-                liftIO $
-                    (\() -> Nothing)
-                        <$> Warp.runSettings
-                            ( Warp.setLogger
-                                (curry3 $ unless . statusIsSuccessful . snd3 <*> putMVar m . pure . ErrorEvent . Error "HTTP error")
-                                . Warp.setPort port
-                                $ Warp.defaultSettings
-                            )
-                            (server $ liftIO . putMVar m . pure)
-            , S.repeatM $ Just <$> liftIO (takeMVar m)
-            ]
+feed port = S.morphInner liftIO $ emitterToStream \f ->
+    Warp.runSettings
+        ( Warp.setLogger
+            (curry3 $ unless . statusIsSuccessful . snd3 <*> f . pure . ErrorEvent . Error "HTTP error")
+            . Warp.setPort port
+            $ Warp.defaultSettings
+        )
+        (server $ liftIO . f . pure)
