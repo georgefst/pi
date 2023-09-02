@@ -14,7 +14,6 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding
 import Data.Time
-import Data.Tuple.Extra
 import Evdev (EventData (KeyEvent), KeyEvent (..))
 import Evdev qualified
 import Evdev.Codes (Key (..))
@@ -55,7 +54,7 @@ newtype TypingReason
     = TypingSpotifySearch Spotify.SearchType
 
 dispatchKeys :: Opts -> Evdev.EventData -> KeyboardState -> ([Event], KeyboardState)
-dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case event of
+dispatchKeys opts event = wrap \KeyboardState{..} -> case event of
     KeyEvent KeyL Pressed | ctrl && shift -> startSpotifySearch Spotify.AlbumSearch
     KeyEvent KeyA Pressed | ctrl && shift -> startSpotifySearch Spotify.ArtistSearch
     KeyEvent KeyP Pressed | ctrl && shift -> startSpotifySearch Spotify.PlaylistSearch
@@ -63,22 +62,20 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
     KeyEvent KeyW Pressed | ctrl && shift -> startSpotifySearch Spotify.ShowSearch
     KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
     KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
-    KeyEvent KeyEsc Pressed | Just _ <- typing -> ([LogEvent "Discarding keyboard input"], #typing .~ Nothing)
-    KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> (,#typing .~ Nothing) case t of
+    KeyEvent KeyEsc Pressed | Just _ <- typing -> #typing .= Nothing >> pure [LogEvent "Discarding keyboard input"]
+    KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> #typing .= Nothing >> case t of
         TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
           where
             -- TODO why can't I de-indent this where? GHC bug?
             text = T.pack $ reverse cs
     KeyEvent k e | Just (t, cs) <- typing -> case e of
         Pressed -> case keyToChar shift k of
-            Just c -> (mempty, #typing ?~ (t, c : cs))
+            Just c -> #typing ?= (t, c : cs) >> pure []
             Nothing ->
-                ( [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
-                , id
-                )
-        _ -> (mempty, id)
+                pure [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
+        _ -> pure []
     _ | Just mk <- modeChangeState -> case event of
-        KeyEvent KeyRightalt Released -> second ((#modeChangeState .~ Nothing) .) case mk of
+        KeyEvent KeyRightalt Released -> #modeChangeState .= Nothing >> case mk of
             Nothing -> f previousMode
             Just k -> case k of
                 KeyEsc -> f Idle
@@ -86,11 +83,13 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
                 KeyDot -> f Normal
                 KeyT -> f TV
                 KeyComma -> f Sending
-                _ -> ([LogEvent $ "Key does not correspond to any mode: " <> showT k], id)
+                _ -> pure [LogEvent $ "Key does not correspond to any mode: " <> showT k]
           where
             old = mode
-            f new =
-                (
+            f new = do
+                #mode .= new
+                #previousMode .= old
+                pure
                     [ LogEvent $ "Changing keyboard mode: " <> showT new
                     , ActionEvent mempty do
                         for_ (opts.modeLED old) $ send . flip SetLED False
@@ -104,17 +103,15 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
                             Quiet -> send $ SetSystemLEDs False
                             _ -> pure ()
                     ]
-                , (#mode .~ new) . (#previousMode .~ old)
-                )
-        _ -> (mempty,) case event of
-            KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?~ Just k
-            _ -> id
-    _ -> (,id) case mode of
-        Idle -> []
-        Quiet -> []
+        _ -> case event of
+            KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?= Just k >> pure []
+            _ -> pure []
+    _ -> case mode of
+        Idle -> pure []
+        Quiet -> pure []
         Sending -> case event of
             KeyEvent k e | k /= KeyRightalt -> simpleAct $ SendKey k e
-            _ -> []
+            _ -> pure []
         Normal -> case event of
             KeyEvent KeyEsc Pressed | ctrl -> simpleAct Exit
             KeyEvent KeyR Pressed | ctrl -> simpleAct ResetError
@@ -145,15 +142,15 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
                 l <- send GetCurrentLight
                 p <- send $ GetLightPower l
                 send $ SetLightPower l $ not p
-            KeyEvent KeyLeft e -> modifyLight e $ #hue %~ subtract hueInterval
-            KeyEvent KeyRight e -> modifyLight e $ #hue %~ (+ hueInterval)
-            KeyEvent KeyMinus e -> modifyLight e $ #saturation %~ incrementLightField clampedSub minBound 256
-            KeyEvent KeyEqual e -> modifyLight e $ #saturation %~ incrementLightField clampedAdd maxBound 256
-            KeyEvent KeyDown e -> modifyLight e $ #brightness %~ incrementLightField clampedSub minBound 256
-            KeyEvent KeyUp e -> modifyLight e $ #brightness %~ incrementLightField clampedAdd maxBound 256
-            KeyEvent KeyLeftbrace e -> modifyLight e $ #kelvin %~ incrementLightField clampedSub 1500 25
-            KeyEvent KeyRightbrace e -> modifyLight e $ #kelvin %~ incrementLightField clampedAdd 9000 25
-            _ -> []
+            KeyEvent KeyLeft e -> modifyLight e $ #hue %~ subtract (hueInterval ctrl shift)
+            KeyEvent KeyRight e -> modifyLight e $ #hue %~ (+ hueInterval ctrl shift)
+            KeyEvent KeyMinus e -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedSub minBound 256
+            KeyEvent KeyEqual e -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedAdd maxBound 256
+            KeyEvent KeyDown e -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedSub minBound 256
+            KeyEvent KeyUp e -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedAdd maxBound 256
+            KeyEvent KeyLeftbrace e -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedSub 1500 25
+            KeyEvent KeyRightbrace e -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedAdd 9000 25
+            _ -> pure []
         TV -> case event of
             KeyEvent KeySpace Pressed -> act do
                 send $ SendIR IROnce IRTV "KEY_AUX"
@@ -193,29 +190,30 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
             KeyEvent KeyBackspace e -> irHold e IRTV "KEY_BACK"
             KeyEvent KeyI e -> irHold e IRTV "KEY_INFO"
             KeyEvent KeyEsc e -> irHold e IRTV "KEY_EXIT"
-            _ -> []
+            _ -> pure []
   where
+    wrap f = runState $ setMods >> get >>= f -- TODO this is only separated to stop Fourmolu from indenting
     setMods = case event of
         KeyEvent KeyLeftctrl e -> setMod #ctrl e
         KeyEvent KeyRightctrl e -> setMod #ctrl e
         KeyEvent KeyLeftshift e -> setMod #shift e
         KeyEvent KeyRightshift e -> setMod #shift e
         KeyEvent KeyLeftalt e -> setMod #alt e
-        KeyEvent KeyRightalt Pressed -> #modeChangeState ?~ Nothing
-        _ -> id
+        KeyEvent KeyRightalt Pressed -> #modeChangeState ?= Nothing
+        _ -> pure ()
       where
         setMod l = \case
-            Pressed -> l .~ True
-            Released -> l .~ False
-            Repeated -> id
+            Pressed -> l .= True
+            Released -> l .= False
+            Repeated -> pure ()
     simpleAct = act . send
-    act = pure . ActionEvent mempty
+    act = pure . pure . ActionEvent mempty
     irOnce = simpleAct .: SendIR IROnce
     irHold = \case
         Pressed -> simpleAct .: SendIR IRStart
-        Repeated -> mempty
+        Repeated -> const $ const $ pure []
         Released -> simpleAct .: SendIR IRStop
-    hueInterval = 16 * if ctrl then 16 else if shift then 4 else 1
+    hueInterval ctrl shift = 16 * if ctrl then 16 else if shift then 4 else 1
     clampedAdd m a b = b + min (m - b) a -- TODO better implementation? maybe in library? else, this is presumably commutative in last two args (ditto below)
     clampedSub m a b = b - min (b - m) a
     modifyLight e f = act case e of
@@ -224,8 +222,8 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
         Released -> send UnsetLightColourCache
       where
         setColour useCache l = send . SetLightColour True l 0 . f =<< send (GetLightColour useCache l)
-    incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
-    startSpotifySearch t = ([LogEvent "Waiting for keyboard input"], #typing ?~ (TypingSpotifySearch t, []))
+    incrementLightField ctrl shift f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
+    startSpotifySearch t = #typing ?= (TypingSpotifySearch t, []) >> pure [LogEvent "Waiting for keyboard input"]
 
 feed :: (S.MonadAsync m, MonadLog Text m) => [Text] -> Mode -> Opts -> S.Stream m [Event]
 feed keyboardNames initialMode opts =
