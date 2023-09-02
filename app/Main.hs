@@ -1,7 +1,7 @@
 module Main (main) where
 
-import GPIO qualified
 import Util
+import Util.GPIO qualified as GPIO
 import Util.Lifx
 
 import Control.Concurrent

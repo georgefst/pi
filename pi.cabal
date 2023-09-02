@@ -11,8 +11,8 @@ executable pi
     hs-source-dirs: app
     other-modules:
         Evdev.Stream
-        GPIO
         Util
+        Util.GPIO
         Util.Lifx
     build-depends:
         base >= 4.16,
