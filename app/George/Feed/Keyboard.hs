@@ -56,13 +56,6 @@ newtype TypingReason
 
 dispatchKeys :: Opts -> Evdev.EventData -> KeyboardState -> ([Event], KeyboardState)
 dispatchKeys opts event = wrap \KeyboardState{..} -> case event of
-    KeyEvent KeyL Pressed | ctrl && shift -> startSpotifySearch Spotify.AlbumSearch
-    KeyEvent KeyA Pressed | ctrl && shift -> startSpotifySearch Spotify.ArtistSearch
-    KeyEvent KeyP Pressed | ctrl && shift -> startSpotifySearch Spotify.PlaylistSearch
-    KeyEvent KeyS Pressed | ctrl && shift -> startSpotifySearch Spotify.TrackSearch
-    KeyEvent KeyW Pressed | ctrl && shift -> startSpotifySearch Spotify.ShowSearch
-    KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
-    KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
     KeyEvent KeyEsc Pressed | Just _ <- typing -> #typing .= Nothing >> pure [LogEvent "Discarding keyboard input"]
     KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> (#typing .= Nothing >>) case t of
         TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
@@ -116,6 +109,13 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case event of
         Normal -> case event of
             KeyEvent KeyEsc Pressed | ctrl -> simpleAct Exit
             KeyEvent KeyR Pressed | ctrl -> simpleAct ResetError
+            KeyEvent KeyL Pressed | ctrl && shift -> startSpotifySearch Spotify.AlbumSearch
+            KeyEvent KeyA Pressed | ctrl && shift -> startSpotifySearch Spotify.ArtistSearch
+            KeyEvent KeyP Pressed | ctrl && shift -> startSpotifySearch Spotify.PlaylistSearch
+            KeyEvent KeyS Pressed | ctrl && shift -> startSpotifySearch Spotify.TrackSearch
+            KeyEvent KeyW Pressed | ctrl && shift -> startSpotifySearch Spotify.ShowSearch
+            KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
+            KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
             KeyEvent KeyP Pressed ->
                 if ctrl
                     then simpleAct ToggleHifiPlug
