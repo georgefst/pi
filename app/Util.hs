@@ -59,8 +59,8 @@ withExists f (Exists a) = f a
 (.:) = (.) . (.)
 
 -- TODO there should really be a simpler way to implement this with folds
-scanStream :: (Monad f) => s -> (a -> s -> (b, s)) -> S.Stream f a -> S.Stream f b
-scanStream s0 f = fmap snd . S.runStateT (pure s0) . S.mapM (state . f) . S.morphInner lift
+scanStream :: (Monad f) => s -> (a -> s -> f (b, s)) -> S.Stream f a -> S.Stream f b
+scanStream s0 f = fmap snd . S.runStateT (pure s0) . S.mapM (StateT . f) . S.morphInner lift
 
 newtype IP = IP {unIP :: HostAddress}
     deriving stock (Generic)

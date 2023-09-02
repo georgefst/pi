@@ -89,11 +89,8 @@ instance ParseRecord Opts where
 data AppState = AppState
     { activeLEDs :: Map Int GPIO.Handle
     , bulbs :: Stream.Stream (Lifx.Device, Lifx.LightState)
-    , keyboards :: Set Evdev.Device
     , httpConnectionManager :: Manager
     , keySendSocket :: Socket
-    , mode :: Mode
-    , previousMode :: Mode
     , lightColourCache :: Maybe HSBK
     }
     deriving (Generic)
@@ -171,12 +168,10 @@ main = do
             AppState
                 { activeLEDs = mempty
                 , bulbs = Stream.cycle ds
-                , keyboards = mempty
-                , mode = Idle
-                , previousMode = Normal
                 , lightColourCache = Nothing
                 , ..
                 }
+        initialMode = Idle
 
     race_
         ( Warp.runSettings
@@ -209,34 +204,40 @@ main = do
                         sendM . liftIO $ f r
                 )
                 . S.concatMap S.fromList
-                . S.mapM gets
                 . S.append
-                    ( -- flash all lights to show we have finished initialising
-                      S.fromList
-                        . map (const . pure . ActionEvent mempty . send)
-                        . intersperse (Sleep 0.4)
-                        -- TODO we shouldn't have to actually set the mode - I only really want to flash the LED
-                        -- but then there's no real harm, except that and that we have to repeat the initial states
-                        -- and we don't display the red LED
-                        -- and we'd quite like to set them all off briefly to make it clearer we've finished
-                        -- and we get a confusing "LED is already off: " message about Idle mode
-                        -- anyway, easy to solve - just split apart `SetMode` so we have separate action for LEDs
-                        -- but does that break useful abstractions?
-                        . map SetMode
-                        $ enumerate <> [initialState.previousMode, initialState.mode]
+                    -- flash all lights to show we have finished initialising
+                    ( S.fromList
+                        . map (pure . ActionEvent mempty . send)
+                        $ concatMap
+                            (\n -> [SetLED n True, Sleep 0.2, SetLED n False])
+                            (mapMaybe modeLED enumerate <> [opts.ledErrorPin])
+                            <> [Sleep 0.5]
+                            <> maybe mempty (pure . flip SetLED True) (modeLED initialMode)
                     )
-                . S.cons (const [LogEvent "Starting..."])
+                . S.cons [LogEvent "Starting..."]
                 . S.morphInner (lift . lift . lift)
                 $ S.parList
                     id
                     [ scanStream
-                        (KeyboardState False False False Nothing Nothing)
+                        (KeyboardState mempty initialMode Normal False False False Nothing Nothing)
                         ( uncurry \d ->
-                            either
-                                ( (runState . pure . pure . pure . ActionEvent mempty . send)
-                                    . either (\() -> AddKeyboard d) (RemoveKeyboard d)
-                                )
-                                (dispatchKeys (opts & \Opts{..} -> KeyboardOpts{..}) . Evdev.eventData)
+                            runStateT
+                                . either
+                                    ( either
+                                        ( \() -> do
+                                            logMessage $ "Evdev device added: " <> decodeUtf8 (Evdev.devicePath d)
+                                            #keyboards %= Set.insert d
+                                            -- TODO unify "always grabbed unless in Idle mode" logic somewhere?
+                                            mode <- use #mode
+                                            pure $ mwhen (mode /= Idle) [ActionEvent mempty $ send $ EvdevGrab d]
+                                        )
+                                        ( \e -> do
+                                            logMessage $ "Evdev device removed: " <> showT e
+                                            #keyboards %= Set.delete d
+                                            pure []
+                                        )
+                                    )
+                                    (state . dispatchKeys (opts & \Opts{..} -> KeyboardOpts{..}) . Evdev.eventData)
                         )
                         -- I can't find a reliable heuristic for "basically a keyboard" so we filter by name
                         . S.filterM (fmap ((`elem` opts.keyboard) . decodeUtf8) . liftIO . Evdev.deviceName . fst)
@@ -252,7 +253,7 @@ main = do
                             )
                         . S.append allDevices
                         $ newDevices' 1_000_000
-                    , S.repeatM $ const . pure <$> liftIO (takeMVar eventMVar)
+                    , S.repeatM $ pure <$> liftIO (takeMVar eventMVar)
                     ]
 
 data Event where
@@ -264,11 +265,12 @@ type CompoundAction a = Eff '[Action] a
 
 data Action a where
     Exit :: Action ()
-    SetMode :: Mode -> Action ()
     ResetError :: Action ()
     Sleep :: NominalDiffTime -> Action ()
-    AddKeyboard :: Evdev.Device -> Action ()
-    RemoveKeyboard :: Evdev.Device -> IOError -> Action ()
+    SetLED :: Int -> Bool -> Action ()
+    SetSystemLEDs :: Bool -> Action ()
+    EvdevGrab :: Evdev.Device -> Action ()
+    EvdevUngrab :: Evdev.Device -> Action ()
     SendKey :: Key -> KeyEvent -> Action ()
     GetCurrentLight :: Action Lifx.Device
     LightReScan :: Action ()
@@ -298,7 +300,6 @@ data IRCmdType
 
 data ActionOpts = ActionOpts
     { ledErrorPin :: Int
-    , modeLED :: Mode -> Maybe Int
     , setLED :: forall m. (MonadState AppState m, MonadIO m) => Int -> Bool -> m ()
     , spotifyDeviceId :: Spotify.DeviceID
     , keySendPort :: PortNumber
@@ -312,31 +313,15 @@ runAction ::
     m a
 runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative fields -}} = (.) catchIO \case
     Exit -> liftIO exitSuccess
-    SetMode new -> do
-        old <- use #mode
-        #mode .= new
-        #previousMode .= old
-        for_ (opts.modeLED old) $ flip setLED False
-        for_ (opts.modeLED new) $ flip setLED True
-        case old of
-            Idle -> liftIO . traverse_ Evdev.grabDevice =<< use #keyboards
-            Quiet -> setSystemLEDs [("ACT", "mmc0"), ("PWR", "default-on")]
-            _ -> pure ()
-        case new of
-            Idle -> liftIO . traverse_ Evdev.ungrabDevice =<< use #keyboards
-            Quiet -> setSystemLEDs [("ACT", "none"), ("PWR", "none")]
-            _ -> pure ()
-      where
-        setSystemLEDs = traverse_ \(l, v) ->
-            liftIO $ readProcess "sudo" ["tee", "/sys/class/leds/" <> l <> "/trigger"] (v <> "\n")
     ResetError -> setLED opts.ledErrorPin False
     Sleep t -> liftIO $ threadDelay' t
-    AddKeyboard d -> do
-        -- TODO unify "always grabbed unless in Idle mode" logic somewhere?
-        mode <- use #mode
-        when (mode /= Idle) $ liftIO $ Evdev.grabDevice d
-        #keyboards %= Set.insert d
-    RemoveKeyboard d _e -> #keyboards %= Set.delete d
+    SetLED n b -> setLED n b
+    SetSystemLEDs b ->
+        traverse_
+            (\(l, v) -> liftIO $ readProcess "sudo" ["tee", "/sys/class/leds/" <> l <> "/trigger"] (v <> "\n"))
+            (if b then [("ACT", "mmc0"), ("PWR", "default-on")] else [("ACT", "none"), ("PWR", "none")])
+    EvdevGrab d -> liftIO $ Evdev.grabDevice d
+    EvdevUngrab d -> liftIO $ Evdev.ungrabDevice d
     SendKey k e -> do
         -- TODO DRY this with my `net-evdev` repo
         sock <- use #keySendSocket
@@ -431,12 +416,16 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                 . Spotify.startPlayback (Just opts.spotifyDeviceId)
                 $ Spotify.StartPlaybackOpts context item Nothing
 
-newtype KeyboardOpts = KeyboardOpts
+data KeyboardOpts = KeyboardOpts
     { flashTime :: NominalDiffTime
+    , modeLED :: Mode -> Maybe Int
     }
     deriving (Generic)
 data KeyboardState = KeyboardState
-    { shift :: Bool
+    { keyboards :: Set Evdev.Device
+    , mode :: Mode
+    , previousMode :: Mode
+    , shift :: Bool
     , ctrl :: Bool
     , alt :: Bool
     , modeChangeState :: Maybe (Maybe Key)
@@ -445,7 +434,7 @@ data KeyboardState = KeyboardState
     deriving (Generic)
 newtype TypingReason
     = TypingSpotifySearch Spotify.SearchType
-dispatchKeys :: KeyboardOpts -> Evdev.EventData -> KeyboardState -> (AppState -> [Event], KeyboardState)
+dispatchKeys :: KeyboardOpts -> Evdev.EventData -> KeyboardState -> ([Event], KeyboardState)
 dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case event of
     KeyEvent KeyL Pressed | ctrl && shift -> startSpotifySearch Spotify.AlbumSearch
     KeyEvent KeyA Pressed | ctrl && shift -> startSpotifySearch Spotify.ArtistSearch
@@ -454,34 +443,53 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
     KeyEvent KeyW Pressed | ctrl && shift -> startSpotifySearch Spotify.ShowSearch
     KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
     KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
-    KeyEvent KeyEsc Pressed | Just _ <- typing -> (,#typing .~ Nothing) \AppState{} ->
-        [LogEvent "Discarding keyboard input"]
-    KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> (,#typing .~ Nothing) \AppState{} ->
-        let text = T.pack $ reverse cs
-         in case t of
-                TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
+    KeyEvent KeyEsc Pressed | Just _ <- typing -> (,#typing .~ Nothing) [LogEvent "Discarding keyboard input"]
+    KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> (,#typing .~ Nothing) case t of
+        TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
+          where
+            -- TODO why can't I de-indent this where? GHC bug?
+            text = T.pack $ reverse cs
     KeyEvent k e | Just (t, cs) <- typing -> case e of
         Pressed -> case keyToChar shift k of
             Just c -> (mempty, #typing ?~ (t, c : cs))
             Nothing ->
-                ( const [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
+                ( [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
                 , id
                 )
         _ -> (mempty, id)
     _ | Just mk <- modeChangeState -> case event of
-        KeyEvent KeyRightalt Released -> (,#modeChangeState .~ Nothing) case mk of
-            Nothing -> \AppState{..} -> simpleAct $ SetMode previousMode
-            Just k -> const case k of
-                KeyEsc -> simpleAct $ SetMode Idle
-                KeyQ -> simpleAct $ SetMode Quiet
-                KeyDot -> simpleAct $ SetMode Normal
-                KeyT -> simpleAct $ SetMode TV
-                KeyComma -> simpleAct $ SetMode Sending
-                _ -> [LogEvent $ "Key does not correspond to any mode: " <> showT k]
+        KeyEvent KeyRightalt Released -> second ((#modeChangeState .~ Nothing) .) case mk of
+            Nothing -> f previousMode
+            Just k -> case k of
+                KeyEsc -> f Idle
+                KeyQ -> f Quiet
+                KeyDot -> f Normal
+                KeyT -> f TV
+                KeyComma -> f Sending
+                _ -> ([LogEvent $ "Key does not correspond to any mode: " <> showT k], id)
+          where
+            old = mode
+            f new =
+                (
+                    [ LogEvent $ "Changing keyboard mode: " <> showT new
+                    , ActionEvent mempty do
+                        for_ (opts.modeLED old) $ send . flip SetLED False
+                        for_ (opts.modeLED new) $ send . flip SetLED True
+                        case old of
+                            Idle -> traverse_ (send . EvdevGrab) keyboards
+                            Quiet -> send $ SetSystemLEDs True
+                            _ -> pure ()
+                        case new of
+                            Idle -> traverse_ (send . EvdevUngrab) keyboards
+                            Quiet -> send $ SetSystemLEDs False
+                            _ -> pure ()
+                    ]
+                , (#mode .~ new) . (#previousMode .~ old)
+                )
         _ -> (mempty,) case event of
             KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?~ Just k
             _ -> id
-    _ -> (,id) \AppState{..} -> case mode of
+    _ -> (,id) case mode of
         Idle -> []
         Quiet -> []
         Sending -> case event of
@@ -597,7 +605,7 @@ dispatchKeys opts event ks0@KeyboardState{..} = second (setMods . ($ ks0)) case 
       where
         setColour useCache l = send . SetLightColour True l 0 . f =<< send (GetLightColour useCache l)
     incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
-    startSpotifySearch t = (const [LogEvent "Waiting for keyboard input"], #typing ?~ (TypingSpotifySearch t, []))
+    startSpotifySearch t = ([LogEvent "Waiting for keyboard input"], #typing ?~ (TypingSpotifySearch t, []))
 
 -- we only use this for actions which return a response
 webServer :: (forall m. (MonadIO m) => Event -> m ()) -> Wai.Application
