@@ -111,8 +111,8 @@ main = do
                 , ..
                 }
 
-    flip runLoggingT (liftIO . T.putStrLn)
-        . flip evalStateT initialState
+    flip evalStateT initialState
+        . flip runLoggingT (liftIO . T.putStrLn)
         . runLifxUntilSuccess
             (either (handleError . Error @() "Misc exception") (handleError . Error "LIFX error"))
             (lifxTime opts.lifxTimeout)
@@ -141,7 +141,7 @@ main = do
                     <> maybe mempty (pure . flip SetLED True) (modeLED initialMode)
             )
         . S.cons [LogEvent "Starting..."]
-        . S.morphInner (lift . lift . lift)
+        . S.morphInner (lift . lift)
         $ S.parList
             id
             [ Keyboard.feed opts.keyboard initialMode (opts & \Opts{..} -> Keyboard.Opts{..})
