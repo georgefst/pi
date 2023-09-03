@@ -84,7 +84,7 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case event of
                 #mode .= new
                 #previousMode .= old
                 when (old == Idle) $ traverse_ (liftIO . Evdev.grabDevice) keyboards
-                when (new == Idle) $ traverse_ (liftIO . Evdev.grabDevice) keyboards
+                when (new == Idle) $ traverse_ (liftIO . Evdev.ungrabDevice) keyboards
                 pure
                     [ LogEvent $ "Changing keyboard mode: " <> showT new
                     , ActionEvent mempty do
