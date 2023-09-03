@@ -7,7 +7,6 @@ import Util
 import Util.GPIO qualified as GPIO
 import Util.Lifx
 
-import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Freer
 import Control.Monad.Log (MonadLog, logMessage, runLoggingT)
@@ -29,7 +28,6 @@ import Network.Wai.Handler.Warp qualified as Warp
 import Optics
 import Options.Generic
 import Spotify.Types.Misc qualified as Spotify
-import Streamly.Data.Fold qualified as SF
 import Streamly.Data.Stream.Prelude qualified as S
 import System.Exit
 import System.IO
@@ -117,19 +115,7 @@ main = do
             (either (handleError . Error @() "Misc exception") (handleError . Error "LIFX error"))
             (lifxTime opts.lifxTimeout)
             (Just $ fromIntegral opts.lifxPort)
-        . S.fold
-            ( SF.drainMapM \case
-                ErrorEvent e -> handleError e
-                LogEvent t -> logMessage t
-                ActionEvent f action -> (either handleError pure <=< runExceptT) $ runM do
-                    r <-
-                        action & translate \a -> do
-                            logMessage $ showT a
-                            runAction (opts & \Opts{..} -> ActionOpts{..}) a
-                    sendM . logMessage $ showT r
-                    sendM . liftIO $ f r
-            )
-        . S.concatMap S.fromList
+        . runEventStream handleError logMessage (runAction (opts & \Opts{..} -> ActionOpts{..}))
         . S.append
             -- flash all lights to show we have finished initialising
             ( S.fromList
