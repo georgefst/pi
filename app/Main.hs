@@ -99,15 +99,14 @@ main = do
         -- otherwise, what port to use? is it a bug that library doesn't release this soon enough? `* 2` is silly
         -- TODO log lights found
         -- TODO use existing logging and failure mechanisms when no lights found
-        ds <-
-            maybe (T.putStrLn "No LIFX devices found" >> exitFailure) pure
+        bulbs <-
+            maybe (T.putStrLn "No LIFX devices found" >> exitFailure) (pure . Stream.cycle)
                 . nonEmpty
                 =<< either (\e -> T.putStrLn ("LIFX startup error: " <> showT e) >> exitFailure) pure
                 =<< Lifx.runLifxT (lifxTime opts.lifxTimeout) (Just $ fromIntegral opts.lifxPort * 2) discoverLifx
         pure
             AppState
                 { activeLEDs = mempty
-                , bulbs = Stream.cycle ds
                 , lightColourCache = Nothing
                 , ..
                 }
