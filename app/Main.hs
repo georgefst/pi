@@ -84,32 +84,33 @@ main = do
                 SimpleError t -> liftIO $ T.putStrLn t
             setLED opts.ledErrorPin True
 
-    -- TODO initialisation stuff - encapsulate this better somehow, without it being killed by LIFX failure
-    let modeLED = \case
+        modeLED = \case
             Keyboard.Idle -> Just opts.ledIdleModePin
             Keyboard.Quiet -> Nothing
             Keyboard.Sending -> Just opts.ledSendingModePin
             Keyboard.Normal -> Just opts.ledNormalModePin
             Keyboard.TV -> Just opts.ledTvModePin
-    httpConnectionManager <- newManager defaultManagerSettings
-    keySendSocket <- socket AF_INET Datagram defaultProtocol >>= \s -> bind s (SockAddrInet defaultPort 0) >> pure s
-    -- TODO shift this in to the LIFX block below - currently akward because this is needed to initialise state monad
-    -- otherwise, what port to use? is it a bug that library doesn't release this soon enough? `* 2` is silly
-    -- TODO log lights found
-    -- TODO use existing logging and failure mechanisms when no lights found
-    ds <-
-        maybe (T.putStrLn "No LIFX devices found" >> exitFailure) pure
-            . nonEmpty
-            =<< either (\e -> T.putStrLn ("LIFX startup error: " <> showT e) >> exitFailure) pure
-            =<< Lifx.runLifxT (lifxTime opts.lifxTimeout) (Just $ fromIntegral opts.lifxPort * 2) discoverLifx
-    let initialState =
+        initialMode = Keyboard.Idle
+
+    initialState <- do
+        httpConnectionManager <- newManager defaultManagerSettings
+        keySendSocket <- socket AF_INET Datagram defaultProtocol >>= \s -> bind s (SockAddrInet defaultPort 0) >> pure s
+        -- TODO shift this in to the LIFX block below - currently awkward because this is needed to run the state monad
+        -- otherwise, what port to use? is it a bug that library doesn't release this soon enough? `* 2` is silly
+        -- TODO log lights found
+        -- TODO use existing logging and failure mechanisms when no lights found
+        ds <-
+            maybe (T.putStrLn "No LIFX devices found" >> exitFailure) pure
+                . nonEmpty
+                =<< either (\e -> T.putStrLn ("LIFX startup error: " <> showT e) >> exitFailure) pure
+                =<< Lifx.runLifxT (lifxTime opts.lifxTimeout) (Just $ fromIntegral opts.lifxPort * 2) discoverLifx
+        pure
             AppState
                 { activeLEDs = mempty
                 , bulbs = Stream.cycle ds
                 , lightColourCache = Nothing
                 , ..
                 }
-        initialMode = Keyboard.Idle
 
     flip runLoggingT (liftIO . T.putStrLn)
         . flip evalStateT initialState
