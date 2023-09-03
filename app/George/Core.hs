@@ -48,6 +48,8 @@ import Spotify.Types.Misc qualified as Spotify
 import Spotify.Types.Search qualified as Spotify
 import Spotify.Types.Simple qualified as Spotify
 import Spotify.Types.Tracks qualified as Spotify
+import Streamly.Data.Fold qualified as SF
+import Streamly.Data.Stream.Prelude qualified as S
 import System.Exit
 import System.Process.Extra
 
@@ -64,6 +66,28 @@ data Event where
     ActionEvent :: (Show a) => (a -> IO ()) -> (CompoundAction a) -> Event
     LogEvent :: Text -> Event
     ErrorEvent :: Error -> Event
+runEventStream ::
+    (MonadIO m) =>
+    (Error -> m ()) ->
+    (Text -> m ()) ->
+    (forall a. Action a -> ExceptT Error m a) ->
+    S.Stream m [Event] ->
+    m ()
+runEventStream handleError log' run' =
+    S.fold
+        ( SF.drainMapM \case
+            ErrorEvent e -> handleError e
+            LogEvent t -> log' t
+            ActionEvent f action -> (either handleError pure <=< runExceptT) $ runM do
+                r <-
+                    action & translate \a -> do
+                        lift . log' $ showT a
+                        run' a
+                sendM . lift . log' $ showT r
+                sendM . liftIO $ f r
+        )
+        . S.concatMap S.fromList
+        . S.cons [LogEvent "Starting..."]
 
 data Error where
     Error :: (Show a) => {title :: Text, body :: a} -> Error
