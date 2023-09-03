@@ -54,7 +54,7 @@ data Mode
 newtype TypingReason
     = TypingSpotifySearch Spotify.SearchType
 
-dispatchKeys :: Opts -> Evdev.EventData -> KeyboardState -> ([Event], KeyboardState)
+dispatchKeys :: (MonadIO m) => Opts -> Evdev.EventData -> KeyboardState -> m ([Event], KeyboardState)
 dispatchKeys opts event = wrap \KeyboardState{..} -> case event of
     KeyEvent KeyEsc Pressed | Just _ <- typing -> #typing .= Nothing >> pure [LogEvent "Discarding keyboard input"]
     KeyEvent KeyEnter Pressed | Just (t, cs) <- typing -> (#typing .= Nothing >>) case t of
@@ -83,17 +83,17 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case event of
             f new = do
                 #mode .= new
                 #previousMode .= old
+                when (old == Idle) $ traverse_ (liftIO . Evdev.grabDevice) keyboards
+                when (new == Idle) $ traverse_ (liftIO . Evdev.ungrabDevice) keyboards
                 pure
                     [ LogEvent $ "Changing keyboard mode: " <> showT new
                     , ActionEvent mempty do
                         for_ (opts.modeLED old) $ send . flip SetLED False
                         for_ (opts.modeLED new) $ send . flip SetLED True
                         case old of
-                            Idle -> traverse_ (send . EvdevGrab) keyboards
                             Quiet -> send $ SetSystemLEDs True
                             _ -> pure ()
                         case new of
-                            Idle -> traverse_ (send . EvdevUngrab) keyboards
                             Quiet -> send $ SetSystemLEDs False
                             _ -> pure ()
                     ]
@@ -193,7 +193,7 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case event of
             KeyEvent KeyEsc e -> irHold e IRTV "KEY_EXIT"
             _ -> pure []
   where
-    wrap f = runState $ setMods >> get >>= f -- TODO this is only separated to stop Fourmolu from indenting
+    wrap f = runStateT $ setMods >> get >>= f -- TODO this is only separated to stop Fourmolu from indenting
     setMods = case event of
         KeyEvent KeyLeftctrl e -> setMod #ctrl e
         KeyEvent KeyRightctrl e -> setMod #ctrl e
@@ -249,7 +249,8 @@ feed keyboardNames initialMode opts =
                             #keyboards %= Set.insert d
                             -- TODO unify "always grabbed unless in Idle mode" logic somewhere?
                             mode <- use #mode
-                            pure $ mwhen (mode /= Idle) [ActionEvent mempty $ send $ EvdevGrab d]
+                            when (mode /= Idle) $ liftIO $ Evdev.grabDevice d
+                            pure []
                         )
                         ( \e -> do
                             logMessage $ "Evdev device removed: " <> showT e
@@ -257,7 +258,7 @@ feed keyboardNames initialMode opts =
                             pure []
                         )
                     )
-                    (state . dispatchKeys opts . Evdev.eventData)
+                    (StateT . dispatchKeys opts . Evdev.eventData)
         )
         -- I can't find a reliable heuristic for "basically a keyboard" so we filter by name
         . S.filterM (fmap ((`elem` keyboardNames) . decodeUtf8) . liftIO . Evdev.deviceName . fst)
