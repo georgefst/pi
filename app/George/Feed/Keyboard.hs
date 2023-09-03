@@ -98,7 +98,7 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case event of
                             _ -> pure ()
                     ]
         _ -> case event of
-            KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?= Just k >> pure []
+            KeyEvent k _ | k /= KeyRightalt -> #modeChangeState ?= Just k >> pure []
             _ -> pure []
     _ -> case mode of
         Idle -> pure []
