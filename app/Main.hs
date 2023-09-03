@@ -47,7 +47,6 @@ data Opts = Opts
     , flashTime :: NominalDiffTime
     , lifxTimeout :: Double
     , lifxPort :: Word16
-    , udpPort :: Word16
     , httpPort :: Warp.Port
     , spotifyDeviceId :: Spotify.DeviceID
     , keyboard :: [Text]
@@ -86,8 +85,6 @@ main = do
             setLED opts.ledErrorPin True
 
     -- TODO initialisation stuff - encapsulate this better somehow, without it being killed by LIFX failure
-    eventSocket <- socket AF_INET Datagram defaultProtocol
-    bind eventSocket $ SockAddrInet (fromIntegral opts.udpPort) 0
     let modeLED = \case
             Keyboard.Idle -> Just opts.ledIdleModePin
             Keyboard.Quiet -> Nothing
