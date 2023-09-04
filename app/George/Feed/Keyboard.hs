@@ -62,6 +62,7 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case event of
           where
             -- TODO why can't I de-indent this where? GHC bug?
             text = T.pack $ reverse cs
+    KeyEvent KeyBackspace Pressed | Just (t, cs) <- typing -> #typing ?= (t, tailSafe cs) >> pure []
     KeyEvent k e | Just (t, cs) <- typing -> case e of
         Pressed -> case keyToChar shift k of
             Just c -> #typing ?= (t, c : cs) >> pure []

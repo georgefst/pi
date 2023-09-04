@@ -135,6 +135,11 @@ threadDelay' = threadDelay . round . (* 1_000_000) . nominalDiffTimeToSeconds
 mwhen :: (Monoid p) => Bool -> p -> p
 mwhen b x = if b then x else mempty
 
+tailSafe :: [a] -> [a]
+tailSafe = \case
+    [] -> []
+    _ : xs -> xs
+
 -- TODO is there a better way to implement this than all this faffing with `SK`?
 streamWithInit :: (Monad m) => m t -> (t -> S.Stream m a) -> S.Stream m a
 streamWithInit init_ stream = SK.toStream $ SK.unCross do
