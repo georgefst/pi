@@ -13,6 +13,7 @@ import Util
 import Util.GPIO qualified as GPIO
 import Util.Lifx
 
+import Control.Exception (IOException)
 import Control.Monad
 import Control.Monad.Catch
 import Control.Monad.Except
@@ -26,6 +27,7 @@ import Data.List
 import Data.List.NonEmpty (nonEmpty)
 import Data.Map (Map)
 import Data.Maybe
+import Data.Proxy
 import Data.Stream.Infinite qualified as Stream
 import Data.Text qualified as T
 import Data.Time
@@ -34,13 +36,14 @@ import Evdev.Codes (Key (..))
 import GHC.Records (HasField)
 import Lifx.Lan (HSBK, MonadLifx)
 import Lifx.Lan qualified as Lifx
-import Network.HTTP.Client
+import Network.HTTP.Client hiding (Proxy)
 import Network.HTTP.Types
 import Network.Socket
 import Network.Socket.ByteString hiding (send)
 import Optics
 import Optics.State.Operators
 import Options.Generic
+import Spotify (MonadSpotify (throwClientError))
 import Spotify qualified
 import Spotify.Servant.Player qualified as Spotify
 import Spotify.Types.Artists qualified as Spotify
@@ -92,8 +95,25 @@ runEventStream handleError log' run' =
 data Error where
     Error :: (Show a) => {title :: Text, body :: a} -> Error
     SimpleError :: Text -> Error
-catchIO :: (MonadCatch m, MonadError Error m) => m a -> m a
-catchIO = handleIOError $ throwError . Error "IO error when running action"
+deriving instance Show Error
+
+-- TODO what I really want is just to catch all non-async exceptions
+-- is there no good way to do this? maybe by catching all then re-throwing asyncs?
+-- it does seem to be difficult - https://www.tweag.io/blog/2020-04-16-exceptions-in-haskell
+-- TODO on the other hand, should the other exception types used here be made subtypes of `IOException`?
+catchActionErrors :: forall m a. (MonadCatch m, MonadError Error m) => m a -> m a
+-- catchActionErrors = catchMany @[IOException, HttpException] $ throwError . Error "Error when running action"
+catchActionErrors =
+    catchMany'
+        [ Exists $ Proxy @IOException
+        , Exists $ Proxy @HttpException
+        , Exists $ Proxy `asProxyTypeOfFunc` throwClientError @IO
+        ]
+        $ throwError . Error "Error when running action"
+  where
+    -- TODO this is just a cute/ugly trick to make up for the fact that Spotify library throws an unexported error type
+    asProxyTypeOfFunc :: proxy x -> (x -> y) -> proxy x
+    asProxyTypeOfFunc = const
 
 type CompoundAction a = Eff '[Action] a
 data Action a where
@@ -143,7 +163,7 @@ runAction ::
     ActionOpts ->
     Action a ->
     m a
-runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative fields -}} = (.) catchIO \case
+runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative fields -}} = (.) catchActionErrors \case
     Exit -> liftIO exitSuccess
     ResetError -> setLED opts.ledErrorPin False
     Sleep t -> liftIO $ threadDelay' t

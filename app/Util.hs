@@ -1,16 +1,21 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Util where
 
 import Control.Concurrent
 import Control.Concurrent.Async
+import Control.Monad.Catch
 import Control.Monad.Freer
 import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Either.Extra
 import Data.Function
+import Data.Kind
 import Data.List.Extra
+import Data.Proxy
 import Data.Text qualified as T
 import Data.Text.Encoding hiding (Some)
 import Data.Time (NominalDiffTime, nominalDiffTimeToSeconds)
@@ -50,12 +55,41 @@ readProcessWithExitCodeTimeout t conf = do
 subsumeFront :: Eff (eff : eff : effs) ~> Eff (eff : effs)
 subsumeFront = subsume
 
--- | A simple wrapper in lieu of first-class existential types.
-data Exists t where
-    Exists :: t a -> Exists t
-
-withExists :: (forall a. t a -> b) -> Exists t -> b
+-- TODO there must be libraries for this sort of thing
+data Exists c t where -- A simple wrapper in lieu of first-class existential types.
+    Exists :: c a => t a -> Exists c t
+withExists :: (forall a. c a => t a -> b) -> Exists c t -> b
 withExists f (Exists a) = f a
+class NullConstraint a
+instance NullConstraint a
+type Exists' = Exists NullConstraint
+class ToProxyList (c :: Type -> Constraint) (ts :: [Type]) where
+    toProxyList :: [Exists c Proxy]
+instance ToProxyList c '[] where
+    toProxyList = []
+instance (c t, ToProxyList c ts) => ToProxyList c (t : ts) where
+    toProxyList = Exists @c (Proxy @t) : toProxyList @c @ts
+
+-- this is a nicer "modern Haskell" interface than I've seen elsewhere for catching multiple exception types
+-- we keep the second version around because it gives slightly more flexibility in obscure cases
+catchMany ::
+    forall (ts :: [Type]) m a.
+    (MonadCatch m, ToProxyList Exception ts) =>
+    (forall e. Exception e => e -> m a) ->
+    m a ->
+    m a
+catchMany h =
+    flip catches
+        . fmap (withExists \(_ :: Proxy e) -> Handler @_ @_ @e h)
+        $ toProxyList @Exception @ts
+catchMany' ::
+    forall m a.
+    (MonadCatch m) =>
+    [Exists Exception Proxy] ->
+    (forall e. Exception e => e -> m a) ->
+    m a ->
+    m a
+catchMany' ps h = flip catches . fmap (withExists \(_ :: Proxy e) -> Handler @_ @_ @e h) $ ps
 
 (.:) :: (c -> c') -> (a -> b -> c) -> a -> b -> c'
 (.:) = (.) . (.)
