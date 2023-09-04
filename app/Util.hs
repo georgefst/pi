@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE PatternSynonyms #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Util where
@@ -62,6 +63,8 @@ withExists f (Exists a) = f a
 class NullConstraint a
 instance NullConstraint a
 type Exists' = Exists NullConstraint
+pattern Exists' :: () => t a -> Exists' t
+pattern Exists' a = Exists a
 class ToProxyList (c :: Type -> Constraint) (ts :: [Type]) where
     toProxyList :: [Exists c Proxy]
 instance ToProxyList c '[] where
