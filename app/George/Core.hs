@@ -6,6 +6,8 @@ Receiving and
 Generating
 Events
 -}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# OPTIONS_GHC -Wno-unused-foralls #-}
 
 module George.Core where
 
@@ -13,6 +15,7 @@ import Util
 import Util.GPIO qualified as GPIO
 import Util.Lifx
 
+import Control.Exception (IOException)
 import Control.Monad
 import Control.Monad.Catch
 import Control.Monad.Except
@@ -22,19 +25,22 @@ import Control.Monad.State.Strict
 import Data.ByteString qualified as B
 import Data.Char (isSpace)
 import Data.Foldable
+import Data.Kind
 import Data.List
 import Data.List.NonEmpty (nonEmpty)
 import Data.Map (Map)
 import Data.Maybe
+import Data.Proxy
 import Data.Stream.Infinite qualified as Stream
 import Data.Text qualified as T
+import Data.Text.IO qualified as T
 import Data.Time
 import Evdev (KeyEvent (..))
 import Evdev.Codes (Key (..))
 import GHC.Records (HasField)
 import Lifx.Lan (HSBK, MonadLifx)
 import Lifx.Lan qualified as Lifx
-import Network.HTTP.Client
+import Network.HTTP.Client hiding (Proxy)
 import Network.HTTP.Types
 import Network.Socket
 import Network.Socket.ByteString hiding (send)
@@ -52,6 +58,7 @@ import Streamly.Data.Fold qualified as SF
 import Streamly.Data.Stream.Prelude qualified as S
 import System.Exit
 import System.Process.Extra
+import Text.Pretty.Simple
 
 data AppState = AppState
     { activeLEDs :: Map Int GPIO.Handle
@@ -92,8 +99,9 @@ runEventStream handleError log' run' =
 data Error where
     Error :: (Show a) => {title :: Text, body :: a} -> Error
     SimpleError :: Text -> Error
+deriving instance Show Error
 catchIO :: (MonadCatch m, MonadError Error m) => m a -> m a
-catchIO = handleIOError $ throwError . Error "IO error when running action"
+catchIO = handleAll $ throwError . Error "IO error when running action"
 
 type CompoundAction a = Eff '[Action] a
 data Action a where
@@ -245,3 +253,30 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
             liftIO
                 . Spotify.startPlayback (Just opts.spotifyDeviceId)
                 $ Spotify.StartPlaybackOpts context item Nothing
+
+-- TODO what I really want is just to catch all non-async exceptions
+-- is there no good way to do this? maybe by catching all then re-throwing asyncs?
+-- TODO on the other hand, should the other exception types used here be made subtypes of `IOException`?
+catchIO' :: forall m a. (MonadCatch m, MonadError Error m) => m a -> m a
+catchIO' = catchMany @[IOException, HttpException]
+catchMany :: forall (ts :: [Type]) m a. (MonadCatch m, MonadError Error m, ToProxyList Exception ts) => m a -> m a
+catchMany =
+    flip catches
+        . fmap (\(Exists (_ :: Proxy e)) -> Handler @_ @_ @e $ throwError . Error "Error when running action")
+        $ toProxyList @Exception @ts
+
+plugToggle = runExceptT $ catchIO' do
+    man <- liftIO $ newManager defaultManagerSettings
+    response <- liftIO $ flip httpLbs man =<< parseRequest "http://192.168.1.115/rpc/Switch.Toggle?id=0"
+    liftIO $ T.putStrLn $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
+spot0 = runExceptT $ catchIO' do
+    r <- liftIO $ Spotify.search "" [Spotify.AlbumSearch] Nothing Nothing Spotify.noPagingParams
+    pPrint r
+spot = runExceptT $ catchIO' do
+    r <- liftIO $ Spotify.search "" [Spotify.AlbumSearch] Nothing Nothing Spotify.noPagingParams
+    pPrint r
+
+main1 = runExceptT @Error @IO $ catchIO' do
+    pPrint =<< liftIO (T.readFile "no-exist")
+main2 = runExceptT @Error @IO $ catchIO' do
+    pPrint =<< liftIO (readProcess "ghc1" ["-V"] [])

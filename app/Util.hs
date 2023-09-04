@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Util where
@@ -10,7 +11,9 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Either.Extra
 import Data.Function
+import Data.Kind
 import Data.List.Extra
+import Data.Proxy
 import Data.Text qualified as T
 import Data.Text.Encoding hiding (Some)
 import Data.Time (NominalDiffTime, nominalDiffTimeToSeconds)
@@ -50,12 +53,25 @@ readProcessWithExitCodeTimeout t conf = do
 subsumeFront :: Eff (eff : eff : effs) ~> Eff (eff : effs)
 subsumeFront = subsume
 
--- | A simple wrapper in lieu of first-class existential types.
-data Exists t where
-    Exists :: t a -> Exists t
-
-withExists :: (forall a. t a -> b) -> Exists t -> b
+-- A simple wrapper in lieu of first-class existential types.
+type Exists' = Exists NullConstraint
+data Exists c t where
+    Exists :: c a => t a -> Exists c t
+withExists :: (forall a. c a => t a -> b) -> Exists c t -> b
 withExists f (Exists a) = f a
+class NullConstraint a
+instance NullConstraint a
+
+
+
+-- TODO there must be libraries for this sort of thing
+class ToProxyList (c :: Type -> Constraint) (ts :: [Type]) where
+    toProxyList :: [Exists c Proxy]
+instance ToProxyList c '[] where
+    toProxyList = []
+instance (c t, ToProxyList c ts) => ToProxyList c (t : ts) where
+    toProxyList = Exists @c (Proxy @t) : toProxyList @c @ts
+
 
 (.:) :: (c -> c') -> (a -> b -> c) -> a -> b -> c'
 (.:) = (.) . (.)
