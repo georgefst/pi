@@ -77,10 +77,7 @@ catchMany ::
     (forall e. Exception e => e -> m a) ->
     m a ->
     m a
-catchMany h =
-    flip catches
-        . fmap (withExists \(_ :: Proxy e) -> Handler @_ @_ @e h)
-        $ toProxyList @Exception @ts
+catchMany = catchMany' $ toProxyList @Exception @ts
 catchMany' ::
     forall m a.
     (MonadCatch m) =>
