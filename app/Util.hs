@@ -56,8 +56,8 @@ subsumeFront = subsume
 
 -- TODO there must be libraries for this sort of thing
 data Exists c t where -- A simple wrapper in lieu of first-class existential types.
-    Exists :: c a => t a -> Exists c t
-withExists :: (forall a. c a => t a -> b) -> Exists c t -> b
+    Exists :: (c a) => t a -> Exists c t
+withExists :: (forall a. (c a) => t a -> b) -> Exists c t -> b
 withExists f (Exists a) = f a
 class NullConstraint a
 instance NullConstraint a
@@ -74,7 +74,7 @@ instance (c t, ToProxyList c ts) => ToProxyList c (t : ts) where
 catchMany ::
     forall (ts :: [Type]) m a.
     (MonadCatch m, ToProxyList Exception ts) =>
-    (forall e. Exception e => e -> m a) ->
+    (forall e. (Exception e) => e -> m a) ->
     m a ->
     m a
 catchMany = catchMany' $ toProxyList @Exception @ts
@@ -82,7 +82,7 @@ catchMany' ::
     forall m a.
     (MonadCatch m) =>
     [Exists Exception Proxy] ->
-    (forall e. Exception e => e -> m a) ->
+    (forall e. (Exception e) => e -> m a) ->
     m a ->
     m a
 catchMany' ps h = flip catches . fmap (withExists \(_ :: Proxy e) -> Handler @_ @_ @e h) $ ps
