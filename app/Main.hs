@@ -19,7 +19,6 @@ import Data.Map qualified as Map
 import Data.Maybe
 import Data.Stream.Infinite qualified as Stream
 import Data.Text.IO qualified as T
-import Data.Time
 import Data.Word
 import Lifx.Lan qualified as Lifx
 import Network.HTTP.Client
@@ -27,7 +26,6 @@ import Network.Socket
 import Network.Wai.Handler.Warp qualified as Warp
 import Optics
 import Options.Generic
-import Spotify.Types.Misc qualified as Spotify
 import Streamly.Data.Stream.Prelude qualified as S
 import System.Exit
 import System.IO
@@ -35,18 +33,15 @@ import Text.Pretty.Simple
 
 data Opts = Opts
     { gpioChip :: B.ByteString
-    , buttonDebounce :: Double
     , buttonPin :: Int
     , ledErrorPin :: Int
     , ledIdleModePin :: Int
     , ledSendingModePin :: Int
     , ledNormalModePin :: Int
     , ledTvModePin :: Int
-    , flashTime :: NominalDiffTime
     , lifxTimeout :: Double
     , lifxPort :: Word16
     , httpPort :: Warp.Port
-    , spotifyDeviceId :: Spotify.DeviceID
     , keyboard :: [Text]
     , keySendPort :: PortNumber
     , keySendIps :: [IP]
@@ -129,7 +124,7 @@ main = do
         . S.morphInner (lift . lift)
         $ S.parList
             id
-            [ Keyboard.feed opts.keyboard initialMode (opts & \Opts{..} -> Keyboard.Opts{..})
+            [ Keyboard.feed opts.keyboard initialMode Keyboard.Opts{..}
             , WebServer.feed opts.httpPort
             -- TODO disabled until logging is better
             -- it's easier to see events when monitoring through a separate script

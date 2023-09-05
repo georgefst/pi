@@ -152,7 +152,6 @@ data IRCmdType
 data ActionOpts = ActionOpts
     { ledErrorPin :: Int
     , setLED :: forall m. (MonadState AppState m, MonadLog Text m, MonadIO m) => Int -> Bool -> m ()
-    , spotifyDeviceId :: Spotify.DeviceID
     , keySendPort :: PortNumber
     , keySendIps :: [IP]
     }
@@ -263,5 +262,5 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                 . (fmap (.uri) . listToMaybe . (.items) =<<)
         play context item =
             liftIO
-                . Spotify.startPlayback (Just opts.spotifyDeviceId)
+                . Spotify.startPlayback (Just "b02e5b66ace6dc3b459be661062c452b50ea1c13") -- ID for this    device
                 $ Spotify.StartPlaybackOpts context item Nothing

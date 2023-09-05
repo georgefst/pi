@@ -14,7 +14,6 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding
-import Data.Time
 import Evdev (EventData (KeyEvent), KeyEvent (..))
 import Evdev qualified
 import Evdev.Codes (Key (..))
@@ -26,9 +25,8 @@ import Options.Generic
 import Spotify.Types.Search qualified as Spotify
 import Streamly.Data.Stream.Prelude qualified as S
 
-data Opts = Opts
-    { flashTime :: NominalDiffTime
-    , modeLED :: Mode -> Maybe Int
+newtype Opts = Opts
+    { modeLED :: Mode -> Maybe Int
     }
     deriving (Generic)
 
@@ -129,10 +127,12 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case (typing, modeChangeSta
                 l <- send GetCurrentLight
                 Lifx.LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
                 when wasOff $ send $ SetLightPower l True
-                send $ SetLightColour False l opts.flashTime $ hsbk & #brightness %~ (`div` 2)
-                send $ Sleep opts.flashTime
-                send $ SetLightColour False l opts.flashTime hsbk
+                send $ SetLightColour False l flashTime $ hsbk & #brightness %~ (`div` 2)
+                send $ Sleep flashTime
+                send $ SetLightColour False l flashTime hsbk
                 when wasOff $ send $ SetLightPower l False
+              where
+                flashTime = 0.35
             KeyEvent KeyVolumeup e -> irHold e IRHifi "KEY_VOLUMEUP"
             KeyEvent KeyVolumedown e -> irHold e IRHifi "KEY_VOLUMEDOWN"
             KeyEvent KeyMute Pressed -> irOnce IRHifi "muting"
