@@ -27,7 +27,6 @@ import Data.List
 import Data.List.NonEmpty (nonEmpty)
 import Data.Map (Map)
 import Data.Maybe
-import Data.Proxy
 import Data.Stream.Infinite qualified as Stream
 import Data.Text qualified as T
 import Data.Time
@@ -102,18 +101,11 @@ deriving instance Show Error
 -- it does seem to be difficult - https://www.tweag.io/blog/2020-04-16-exceptions-in-haskell
 -- TODO on the other hand, should the other exception types used here be made subtypes of `IOException`?
 catchActionErrors :: forall m a. (MonadCatch m, MonadError Error m) => m a -> m a
--- catchActionErrors = catchMany @[IOException, HttpException] $ throwError . Error "Error when running action"
-catchActionErrors =
-    catchMany'
-        [ Exists $ Proxy @IOException
-        , Exists $ Proxy @HttpException
-        , Exists $ Proxy `asProxyTypeOfFunc` throwClientError @IO
-        ]
-        $ throwError . Error "Error when running action"
+catchActionErrors = r $ throwClientError @IO
   where
     -- TODO this is just a cute/ugly trick to make up for the fact that Spotify library throws an unexported error type
-    asProxyTypeOfFunc :: proxy x -> (x -> y) -> proxy x
-    asProxyTypeOfFunc = const
+    r :: forall x y. (Exception x) => (x -> y) -> m a -> m a
+    r _ = catchMany @[IOException, HttpException, x] $ throwError . Error "Error when running action"
 
 type CompoundAction a = Eff '[Action] a
 data Action a where
