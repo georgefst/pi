@@ -126,7 +126,6 @@ main = do
                     <> [Sleep 0.5]
                     <> maybe mempty (pure . flip SetLED True) (modeLED initialMode)
             )
-        . S.cons [LogEvent "Starting..."]
         . S.morphInner (lift . lift)
         $ S.parList
             id
