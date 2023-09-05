@@ -55,8 +55,8 @@ newtype TypingReason
     = TypingSpotifySearch Spotify.SearchType
 
 dispatchKeys :: (MonadIO m) => Opts -> Evdev.EventData -> KeyboardState -> m ([Event], KeyboardState)
-dispatchKeys opts event = wrap \KeyboardState{..} -> case () of -- TODO we'd use `MultiWayIf` but Fourmolu hates it
-    () | Just (t, cs) <- typing -> case event of
+dispatchKeys opts event = wrap \KeyboardState{..} -> case (typing, modeChangeState) of
+    (Just (t, cs), _) -> case event of
         KeyEvent KeyEsc Pressed -> #typing .= Nothing >> pure [LogEvent "Discarding keyboard input"]
         KeyEvent KeyEnter Pressed -> (#typing .= Nothing >>) case t of
             TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
@@ -69,7 +69,7 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case () of -- TODO we'd use
             Nothing ->
                 pure [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
         _ -> pure []
-    () | Just mk <- modeChangeState -> case event of
+    (_, Just mk) -> case event of
         KeyEvent KeyRightalt Released -> (#modeChangeState .= Nothing >>) case mk of
             Nothing -> f previousMode
             Just k -> case k of
@@ -101,7 +101,7 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case () of -- TODO we'd use
         _ -> case event of
             KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?= Just k >> pure []
             _ -> pure []
-    () -> case mode of
+    (Nothing, Nothing) -> case mode of
         Idle -> pure []
         Quiet -> pure []
         Sending -> case event of
