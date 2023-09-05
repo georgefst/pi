@@ -16,7 +16,7 @@ data Opts = Opts
     }
 
 feed :: (S.MonadAsync m) => Opts -> S.Stream m [Event]
-feed opts = S.morphInner liftIO $ emitterToStream \f ->
+feed opts = emitterToStream \f ->
     GPIO.mon
         opts.gpioChip
         (f . pure . LogEvent)
@@ -24,4 +24,4 @@ feed opts = S.morphInner liftIO $ emitterToStream \f ->
         opts.buttonPin
         -- TODO we'd ideally use this is a power button, but for noew we just monitor it
         -- since there have been issues with electrical interference causing spurious triggers
-        (f . pure . LogEvent . ("GPIO button pressed: " <>) . showT =<< getCurrentTime)
+        (f . pure . LogEvent . ("GPIO button pressed: " <>) . showT =<< liftIO getCurrentTime)

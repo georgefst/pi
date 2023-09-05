@@ -30,15 +30,15 @@ set gpioChip xs = do
             gpioChip : map ((<> "=1") . showBS) xs
     pure $ Handle gpioChip xs
 
-mon :: ByteString -> (Text -> IO ()) -> Double -> Int -> IO () -> IO ()
+mon :: (MonadIO m) => ByteString -> (Text -> m ()) -> Double -> Int -> m () -> m ()
 mon gpioChip putLine debounce pin x = do
     p <-
-        startProcess $
+        liftIO . startProcess $
             proc "gpiomon" ["-b", "-f", gpioChip, showBS pin]
                 `setStdout` CreatePipe
-    getCurrentTime >>= iterateM_ \t0 -> do
-        line <- hGetLine $ processStdout p
-        t1 <- getCurrentTime
+    liftIO getCurrentTime >>= iterateM_ \t0 -> do
+        line <- liftIO . hGetLine $ processStdout p
+        t1 <- liftIO getCurrentTime
         if diffUTCTime t1 t0 < realToFrac debounce
             then putLine $ "(Ignoring) " <> T.pack line
             else putLine (T.pack line) >> x
