@@ -56,20 +56,20 @@ newtype TypingReason
 
 dispatchKeys :: (MonadIO m) => Opts -> Evdev.EventData -> KeyboardState -> m ([Event], KeyboardState)
 dispatchKeys opts event = wrap \KeyboardState{..} -> case () of -- TODO we'd use `MultiWayIf` but Fourmolu hates it
- () | Just (t, cs) <- typing -> case event of
-    KeyEvent KeyEsc Pressed -> #typing .= Nothing >> pure [LogEvent "Discarding keyboard input"]
-    KeyEvent KeyEnter Pressed -> (#typing .= Nothing >>) case t of
-        TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
-          where
-            -- TODO why can't I de-indent this where? GHC bug?
-            text = T.pack $ reverse cs
-    KeyEvent KeyBackspace Pressed -> #typing ?= (t, tailSafe cs) >> pure []
-    KeyEvent k Pressed -> case keyToChar shift k of
+    () | Just (t, cs) <- typing -> case event of
+        KeyEvent KeyEsc Pressed -> #typing .= Nothing >> pure [LogEvent "Discarding keyboard input"]
+        KeyEvent KeyEnter Pressed -> (#typing .= Nothing >>) case t of
+            TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
+              where
+                -- TODO why can't I de-indent this where? GHC bug?
+                text = T.pack $ reverse cs
+        KeyEvent KeyBackspace Pressed -> #typing ?= (t, tailSafe cs) >> pure []
+        KeyEvent k Pressed -> case keyToChar shift k of
             Just c -> #typing ?= (t, c : cs) >> pure []
             Nothing ->
                 pure [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
-    _ -> pure []
- () | Just mk <- modeChangeState -> case event of
+        _ -> pure []
+    () | Just mk <- modeChangeState -> case event of
         KeyEvent KeyRightalt Released -> (#modeChangeState .= Nothing >>) case mk of
             Nothing -> f previousMode
             Just k -> case k of
@@ -101,7 +101,7 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case () of -- TODO we'd use
         _ -> case event of
             KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?= Just k >> pure []
             _ -> pure []
- () -> case mode of
+    () -> case mode of
         Idle -> pure []
         Quiet -> pure []
         Sending -> case event of
@@ -193,7 +193,7 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case () of -- TODO we'd use
             KeyEvent KeyI e -> irHold e IRTV "KEY_INFO"
             KeyEvent KeyEsc e -> irHold e IRTV "KEY_EXIT"
             _ -> pure []
- where
+  where
     wrap f = runStateT $ setMods >> get >>= f -- TODO this is only separated to stop Fourmolu from indenting
     setMods = case event of
         KeyEvent KeyLeftctrl e -> setMod #ctrl e
