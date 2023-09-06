@@ -55,12 +55,12 @@ newtype TypingReason
 
 dispatchKeys :: (MonadIO m) => Opts -> Evdev.EventData -> KeyboardState -> m ([Event], KeyboardState)
 dispatchKeys opts = wrap \case
-    (KeyEvent KeyLeftctrl e, _) -> setMod #ctrl e
-    (KeyEvent KeyRightctrl e, _) -> setMod #ctrl e
-    (KeyEvent KeyLeftshift e, _) -> setMod #shift e
-    (KeyEvent KeyRightshift e, _) -> setMod #shift e
-    (KeyEvent KeyLeftalt e, _) -> setMod #alt e
-    (KeyEvent KeyRightalt e, KeyboardState{modeChangeState, keyboards, mode, previousMode}) -> case e of
+    (KeyLeftctrl, e, _) -> setMod #ctrl e
+    (KeyRightctrl, e, _) -> setMod #ctrl e
+    (KeyLeftshift, e, _) -> setMod #shift e
+    (KeyRightshift, e, _) -> setMod #shift e
+    (KeyLeftalt, e, _) -> setMod #alt e
+    (KeyRightalt, e, KeyboardState{modeChangeState, keyboards, mode, previousMode}) -> case e of
         Pressed -> #modeChangeState ?= Nothing
         _ -> case modeChangeState of
             Nothing -> tell [ErrorEvent $ Error "Unexpected mode switch key event" e]
@@ -94,46 +94,44 @@ dispatchKeys opts = wrap \case
                                 Quiet -> send $ SetSystemLEDs False
                                 _ -> pure ()
                         ]
-    (event, KeyboardState{typing = Just (t, cs), shift}) -> case event of
-        KeyEvent KeyEsc Pressed -> #typing .= Nothing >> tell [LogEvent "Discarding keyboard input"]
-        KeyEvent KeyEnter Pressed -> (#typing .= Nothing >>) case t of
+    (k, Pressed, KeyboardState{typing = Just (t, cs), shift}) -> case k of
+        KeyEsc -> #typing .= Nothing >> tell [LogEvent "Discarding keyboard input"]
+        KeyEnter -> (#typing .= Nothing >>) case t of
             TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
               where
                 -- TODO why can't I de-indent this where? GHC bug?
                 text = T.pack $ reverse cs
-        KeyEvent KeyBackspace Pressed -> #typing ?= (t, tailSafe cs)
-        KeyEvent k Pressed -> case keyToChar shift k of
+        KeyBackspace -> #typing ?= (t, tailSafe cs)
+        _ -> case keyToChar shift k of
             Just c -> #typing ?= (t, c : cs)
             Nothing ->
                 tell [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
-        _ -> pure ()
-    (event, KeyboardState{modeChangeState = Just _}) -> case event of
-        KeyEvent k _ -> #modeChangeState ?= Just k
-        _ -> pure ()
-    (event, KeyboardState{..}) -> case mode of
+    (k, _, KeyboardState{modeChangeState = Just _}) ->
+        #modeChangeState ?= Just k
+    (k, e@((== Pressed) -> pressed), KeyboardState{..}) -> case mode of
         Idle -> pure ()
         Quiet -> pure ()
-        Sending -> case event of
-            KeyEvent k e -> simpleAct $ SendKey k e
-            _ -> pure ()
-        Normal -> case event of
-            KeyEvent KeyEsc Pressed | ctrl -> simpleAct Exit
-            KeyEvent KeyR Pressed | ctrl -> simpleAct ResetError
-            KeyEvent KeyL Pressed | ctrl && shift -> startSpotifySearch Spotify.AlbumSearch
-            KeyEvent KeyA Pressed | ctrl && shift -> startSpotifySearch Spotify.ArtistSearch
-            KeyEvent KeyP Pressed | ctrl && shift -> startSpotifySearch Spotify.PlaylistSearch
-            KeyEvent KeyS Pressed | ctrl && shift -> startSpotifySearch Spotify.TrackSearch
-            KeyEvent KeyW Pressed | ctrl && shift -> startSpotifySearch Spotify.ShowSearch
-            KeyEvent KeyE Pressed | ctrl && shift -> startSpotifySearch Spotify.EpisodeSearch
-            KeyEvent KeyB Pressed | ctrl && shift -> startSpotifySearch Spotify.AudiobookSearch
-            KeyEvent KeyP Pressed ->
-                if ctrl
-                    then simpleAct ToggleHifiPlug
-                    else act do
-                        send $ SendIR IROnce IRHifi "KEY_POWER"
-                        send $ Sleep 1
-                        send $ SendIR IROnce IRHifi "KEY_TAPE"
-            KeyEvent KeyS Pressed -> act do
+        Sending -> simpleAct $ SendKey k e
+        Normal -> case k of
+            KeyEsc | pressed, ctrl -> simpleAct Exit
+            KeyR | pressed, ctrl -> simpleAct ResetError
+            KeyL | pressed, ctrl, shift -> startSpotifySearch Spotify.AlbumSearch
+            KeyA | pressed, ctrl, shift -> startSpotifySearch Spotify.ArtistSearch
+            KeyP | pressed, ctrl, shift -> startSpotifySearch Spotify.PlaylistSearch
+            KeyS | pressed, ctrl, shift -> startSpotifySearch Spotify.TrackSearch
+            KeyW | pressed, ctrl, shift -> startSpotifySearch Spotify.ShowSearch
+            KeyE | pressed, ctrl, shift -> startSpotifySearch Spotify.EpisodeSearch
+            KeyB | pressed, ctrl, shift -> startSpotifySearch Spotify.AudiobookSearch
+            KeyP
+                -- TODO Fourmolu is annoying here
+                | pressed ->
+                    if ctrl
+                        then simpleAct ToggleHifiPlug
+                        else act do
+                            send $ SendIR IROnce IRHifi "KEY_POWER"
+                            send $ Sleep 1
+                            send $ SendIR IROnce IRHifi "KEY_TAPE"
+            KeyS | pressed -> act do
                 send NextLight
                 l <- send GetCurrentLight
                 Lifx.LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
@@ -144,28 +142,28 @@ dispatchKeys opts = wrap \case
                 when wasOff $ send $ SetLightPower l False
               where
                 flashTime = 0.35
-            KeyEvent KeyVolumeup e -> irHold e IRHifi "KEY_VOLUMEUP"
-            KeyEvent KeyVolumedown e -> irHold e IRHifi "KEY_VOLUMEDOWN"
-            KeyEvent KeyMute Pressed -> irOnce IRHifi "muting"
-            KeyEvent KeyPlaypause Pressed -> simpleAct $ Mpris "PlayPause"
-            KeyEvent KeyPrevioussong Pressed -> simpleAct $ Mpris "Previous"
-            KeyEvent KeyNextsong Pressed -> simpleAct $ Mpris "Next"
-            KeyEvent KeyR Pressed -> simpleAct LightReScan
-            KeyEvent KeyL Pressed -> act do
+            KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
+            KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
+            KeyMute | pressed -> irOnce IRHifi "muting"
+            KeyPlaypause | pressed -> simpleAct $ Mpris "PlayPause"
+            KeyPrevioussong | pressed -> simpleAct $ Mpris "Previous"
+            KeyNextsong | pressed -> simpleAct $ Mpris "Next"
+            KeyR | pressed -> simpleAct LightReScan
+            KeyL | pressed -> act do
                 l <- send GetCurrentLight
                 p <- send $ GetLightPower l
                 send $ SetLightPower l $ not p
-            KeyEvent KeyLeft e -> modifyLight e $ #hue %~ subtract (hueInterval ctrl shift)
-            KeyEvent KeyRight e -> modifyLight e $ #hue %~ (+ hueInterval ctrl shift)
-            KeyEvent KeyMinus e -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedSub minBound 256
-            KeyEvent KeyEqual e -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedAdd maxBound 256
-            KeyEvent KeyDown e -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedSub minBound 256
-            KeyEvent KeyUp e -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedAdd maxBound 256
-            KeyEvent KeyLeftbrace e -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedSub 1500 25
-            KeyEvent KeyRightbrace e -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedAdd 9000 25
+            KeyLeft -> modifyLight e $ #hue %~ subtract (hueInterval ctrl shift)
+            KeyRight -> modifyLight e $ #hue %~ (+ hueInterval ctrl shift)
+            KeyMinus -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedSub minBound 256
+            KeyEqual -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedAdd maxBound 256
+            KeyDown -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedSub minBound 256
+            KeyUp -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedAdd maxBound 256
+            KeyLeftbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedSub 1500 25
+            KeyRightbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedAdd 9000 25
             _ -> pure ()
-        TV -> case event of
-            KeyEvent KeySpace Pressed -> act do
+        TV -> case k of
+            KeySpace | pressed -> act do
                 send $ SendIR IROnce IRTV "KEY_AUX"
                 send $ Sleep t
                 send $ SendIR IROnce IRTV "KEY_AUX"
@@ -173,39 +171,43 @@ dispatchKeys opts = wrap \case
                 send $ SendIR IROnce IRTV "KEY_OK"
               where
                 t = if ctrl then 1 else 0.35
-            KeyEvent KeyP e -> irHold e IRTV "KEY_POWER"
-            KeyEvent Key1 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_1"
-            KeyEvent Key2 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_2"
-            KeyEvent Key3 e -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_3"
-            KeyEvent Key4 e -> irHold e IRTV "KEY_4"
-            KeyEvent Key5 e -> irHold e IRTV "KEY_5"
-            KeyEvent Key6 e -> irHold e IRTV "KEY_6"
-            KeyEvent Key7 e -> irHold e IRTV "KEY_7"
-            KeyEvent Key8 e -> irHold e IRTV "KEY_8"
-            KeyEvent Key9 e -> irHold e IRTV "KEY_9"
-            KeyEvent Key0 e -> irHold e IRTV "KEY_0"
-            KeyEvent KeyVolumeup e -> irHold e IRTV "KEY_VOLUMEUP"
-            KeyEvent KeyVolumedown e -> irHold e IRTV "KEY_VOLUMEDOWN"
-            KeyEvent KeyMute e -> irHold e IRTV "KEY_MUTE"
-            KeyEvent KeyComma e -> irHold e IRTV "KEY_CHANNELDOWN"
-            KeyEvent KeyDot e -> irHold e IRTV "KEY_CHANNELUP"
-            KeyEvent KeyA e -> irHold e IRTV "KEY_AUX"
-            KeyEvent KeyS e -> irHold e IRTV "KEY_SETUP"
-            KeyEvent KeyR e -> irHold e IRTV "KEY_RED"
-            KeyEvent KeyT e -> irHold e IRTV "KEY_SUBTITLE"
-            KeyEvent KeyG e -> irHold e IRTV "KEY_G"
-            KeyEvent KeyQ e -> irHold e IRTV "KEY_MENU"
-            KeyEvent KeyUp e -> irHold e IRTV "KEY_UP"
-            KeyEvent KeyDown e -> irHold e IRTV "KEY_DOWN"
-            KeyEvent KeyLeft e -> irHold e IRTV "KEY_LEFT"
-            KeyEvent KeyRight e -> irHold e IRTV "KEY_RIGHT"
-            KeyEvent KeyEnter e -> irHold e IRTV "KEY_OK"
-            KeyEvent KeyBackspace e -> irHold e IRTV "KEY_BACK"
-            KeyEvent KeyI e -> irHold e IRTV "KEY_INFO"
-            KeyEvent KeyEsc e -> irHold e IRTV "KEY_EXIT"
+            KeyP -> irHold e IRTV "KEY_POWER"
+            Key1 -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_1"
+            Key2 -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_2"
+            Key3 -> irHold e (if ctrl then IRSwitcher else IRTV) "KEY_3"
+            Key4 -> irHold e IRTV "KEY_4"
+            Key5 -> irHold e IRTV "KEY_5"
+            Key6 -> irHold e IRTV "KEY_6"
+            Key7 -> irHold e IRTV "KEY_7"
+            Key8 -> irHold e IRTV "KEY_8"
+            Key9 -> irHold e IRTV "KEY_9"
+            Key0 -> irHold e IRTV "KEY_0"
+            KeyVolumeup -> irHold e IRTV "KEY_VOLUMEUP"
+            KeyVolumedown -> irHold e IRTV "KEY_VOLUMEDOWN"
+            KeyMute -> irHold e IRTV "KEY_MUTE"
+            KeyComma -> irHold e IRTV "KEY_CHANNELDOWN"
+            KeyDot -> irHold e IRTV "KEY_CHANNELUP"
+            KeyA -> irHold e IRTV "KEY_AUX"
+            KeyS -> irHold e IRTV "KEY_SETUP"
+            KeyR -> irHold e IRTV "KEY_RED"
+            KeyT -> irHold e IRTV "KEY_SUBTITLE"
+            KeyG -> irHold e IRTV "KEY_G"
+            KeyQ -> irHold e IRTV "KEY_MENU"
+            KeyUp -> irHold e IRTV "KEY_UP"
+            KeyDown -> irHold e IRTV "KEY_DOWN"
+            KeyLeft -> irHold e IRTV "KEY_LEFT"
+            KeyRight -> irHold e IRTV "KEY_RIGHT"
+            KeyEnter -> irHold e IRTV "KEY_OK"
+            KeyBackspace -> irHold e IRTV "KEY_BACK"
+            KeyI -> irHold e IRTV "KEY_INFO"
+            KeyEsc -> irHold e IRTV "KEY_EXIT"
             _ -> pure ()
   where
-    wrap f e = fmap (\(((), s), es) -> (es, s)) . runWriterT . runStateT (get >>= \s -> f (e, s)) -- TODO this is only separated to stop Fourmolu from indenting
+    wrap f e0 =
+        -- this was originally separated to stop Fourmolu from indenting - it's now used to build a sort of DSL
+        fmap (\(((), s), es) -> (es, s)) . runWriterT . runStateT case e0 of
+            KeyEvent k e -> get >>= \s -> f (k, e, s)
+            _ -> pure ()
     setMod l = \case
         Pressed -> l .= True
         Released -> l .= False
