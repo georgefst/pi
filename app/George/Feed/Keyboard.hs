@@ -96,7 +96,7 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case (typing, modeChangeSta
                             Quiet -> send $ SetSystemLEDs False
                             _ -> pure ()
                     ]
-        KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?= Just k >> pure []
+        KeyEvent k _ | k /= KeyRightalt -> #modeChangeState ?= Just k >> pure []
         _ -> pure []
     (Nothing, Nothing) -> case mode of
         Idle -> pure []
