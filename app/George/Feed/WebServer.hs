@@ -22,6 +22,10 @@ server f =
     makeOkapiApp id $
         asum
             [ withGetRoute "light" $ f' id (send . GetLightName =<< send GetCurrentLight)
+            , withGetRoute "spotify" do
+                seg "transfer"
+                deviceName <- segParam
+                f' showT $ send . flip SpotifyTransfer True =<< send (SpotifyGetDevice deviceName)
             ]
   where
     withGetRoute s x = Okapi.get >> seg s >> x

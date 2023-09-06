@@ -47,6 +47,7 @@ import Spotify qualified
 import Spotify.Servant.Player qualified as Spotify
 import Spotify.Types.Artists qualified as Spotify
 import Spotify.Types.Misc qualified as Spotify
+import Spotify.Types.Player qualified as Spotify
 import Spotify.Types.Search qualified as Spotify
 import Spotify.Types.Simple qualified as Spotify
 import Spotify.Types.Tracks qualified as Spotify
@@ -128,7 +129,9 @@ data Action a where
     Mpris :: Text -> Action ()
     SendIR :: IRCmdType -> IRDev -> Text -> Action ()
     ToggleHifiPlug :: Action ()
-    SpotifySearchAndPlay :: Spotify.SearchType -> Text -> Action ()
+    SpotifyGetDevice :: Text -> Action Spotify.DeviceID
+    SpotifyTransfer :: Spotify.DeviceID -> Bool -> Action ()
+    SpotifySearchAndPlay :: Spotify.SearchType -> Text -> Spotify.DeviceID -> Action ()
 deriving instance Show (Action a)
 data IRDev
     = IRHifi
@@ -229,7 +232,12 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         man <- use #httpConnectionManager
         response <- liftIO $ flip httpLbs man =<< parseRequest "http://192.168.1.114/rpc/Switch.Toggle?id=0"
         logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
-    SpotifySearchAndPlay searchType query -> do
+    SpotifyGetDevice t -> do
+        ds <- liftIO Spotify.getAvailableDevices
+        maybe (throwError $ Error "Spotify device not found" (t, ds)) (pure . (.id)) $ find ((== t) . (.name)) ds
+    SpotifyTransfer d b -> do
+        liftIO $ Spotify.transferPlayback [d] b
+    SpotifySearchAndPlay searchType query device -> do
         searchResult <- liftIO $ Spotify.search query [searchType] Nothing Nothing Spotify.noPagingParams
         case searchType of
             Spotify.AlbumSearch -> do
@@ -254,5 +262,5 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                 . (fmap (.uri) . listToMaybe . (.items) =<<)
         play context item =
             liftIO
-                . Spotify.startPlayback (Just "b02e5b66ace6dc3b459be661062c452b50ea1c13") -- ID for this    device
+                . Spotify.startPlayback (Just device) -- ID for this    device
                 $ Spotify.StartPlaybackOpts context item Nothing

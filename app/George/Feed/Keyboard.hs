@@ -100,7 +100,8 @@ dispatchKeys opts = wrap \case
     (k, Pressed, KeyboardState{typing = Just (t, cs), shift}) -> case k of
         KeyEsc -> #typing .= Nothing >> tell [LogEvent "Discarding keyboard input"]
         KeyEnter -> (#typing .= Nothing >>) case t of
-            TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
+            TypingSpotifySearch searchType ->
+                act $ send . SpotifySearchAndPlay searchType text =<< send (SpotifyGetDevice speakerName)
               where
                 -- TODO why can't I de-indent this where? GHC bug?
                 text = T.pack $ reverse cs
@@ -161,6 +162,7 @@ dispatchKeys opts = wrap \case
                         l <- send GetCurrentLight
                         p <- send $ GetLightPower l
                         send $ SetLightPower l $ not p
+                    KeyT -> act $ send . flip SpotifyTransfer ctrl =<< send (SpotifyGetDevice speakerName)
                     _ -> pure ()
                 _ -> pure ()
         TV -> case k of
@@ -231,6 +233,7 @@ dispatchKeys opts = wrap \case
         setColour useCache l = send . SetLightColour True l 0 . f =<< send (GetLightColour useCache l)
     incrementLightField ctrl shift f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
     startSpotifySearch t = #typing ?= (TypingSpotifySearch t, []) >> tell [LogEvent "Waiting for keyboard input"]
+    speakerName = "pi"
 
 feed :: (S.MonadAsync m, MonadLog Text m) => [Text] -> Mode -> Opts -> S.Stream m [Event]
 feed keyboardNames initialMode opts =
