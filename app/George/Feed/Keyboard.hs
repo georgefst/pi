@@ -142,8 +142,6 @@ dispatchKeys opts = wrap \case
                 when wasOff $ send $ SetLightPower l False
               where
                 flashTime = 0.35
-            KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
-            KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
             KeyMute | pressed -> irOnce IRHifi "muting"
             KeyPlaypause | pressed -> simpleAct $ Mpris "PlayPause"
             KeyPrevioussong | pressed -> simpleAct $ Mpris "Previous"
@@ -153,6 +151,8 @@ dispatchKeys opts = wrap \case
                 l <- send GetCurrentLight
                 p <- send $ GetLightPower l
                 send $ SetLightPower l $ not p
+            KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
+            KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
             KeyLeft -> modifyLight e $ #hue %~ subtract (hueInterval ctrl shift)
             KeyRight -> modifyLight e $ #hue %~ (+ hueInterval ctrl shift)
             KeyMinus -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedSub minBound 256
