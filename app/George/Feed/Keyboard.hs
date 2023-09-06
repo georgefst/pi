@@ -55,11 +55,6 @@ newtype TypingReason
 
 dispatchKeys :: (MonadIO m) => Opts -> Evdev.EventData -> KeyboardState -> m ([Event], KeyboardState)
 dispatchKeys opts = wrap \case
-    (KeyLeftctrl, e, _) -> setMod #ctrl e
-    (KeyRightctrl, e, _) -> setMod #ctrl e
-    (KeyLeftshift, e, _) -> setMod #shift e
-    (KeyRightshift, e, _) -> setMod #shift e
-    (KeyLeftalt, e, _) -> setMod #alt e
     (KeyRightalt, e, KeyboardState{modeChangeState, keyboards, mode, previousMode}) -> case e of
         Pressed -> #modeChangeState ?= Nothing
         _ -> case modeChangeState of
@@ -96,6 +91,12 @@ dispatchKeys opts = wrap \case
                         ]
     (k, _, KeyboardState{modeChangeState = Just _}) ->
         #modeChangeState ?= Just k
+    (k, e, KeyboardState{mode = Sending}) -> simpleAct $ SendKey k e
+    (KeyLeftctrl, e, _) -> setMod #ctrl e
+    (KeyRightctrl, e, _) -> setMod #ctrl e
+    (KeyLeftshift, e, _) -> setMod #shift e
+    (KeyRightshift, e, _) -> setMod #shift e
+    (KeyLeftalt, e, _) -> setMod #alt e
     (k, Pressed, KeyboardState{typing = Just (t, cs), shift}) -> case k of
         KeyEsc -> #typing .= Nothing >> tell [LogEvent "Discarding keyboard input"]
         KeyEnter -> (#typing .= Nothing >>) case t of
@@ -111,7 +112,6 @@ dispatchKeys opts = wrap \case
     (k, e, KeyboardState{..}) -> case mode of
         Idle -> pure ()
         Quiet -> pure ()
-        Sending -> simpleAct $ SendKey k e
         Normal -> case k of
             KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
             KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
