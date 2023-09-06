@@ -112,7 +112,18 @@ dispatchKeys opts = wrap \case
         Idle -> pure ()
         Quiet -> pure ()
         Sending -> simpleAct $ SendKey k e
-        Normal -> case e of
+        Normal -> case k of
+          KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
+          KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
+          KeyLeft -> modifyLight e $ #hue %~ subtract (hueInterval ctrl shift)
+          KeyRight -> modifyLight e $ #hue %~ (+ hueInterval ctrl shift)
+          KeyMinus -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedSub minBound 256
+          KeyEqual -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedAdd maxBound 256
+          KeyDown -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedSub minBound 256
+          KeyUp -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedAdd maxBound 256
+          KeyLeftbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedSub 1500 25
+          KeyRightbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedAdd 9000 25
+          _ -> case e of
             Pressed -> case k of
                 KeyEsc | ctrl -> simpleAct Exit
                 KeyR | ctrl -> simpleAct ResetError
@@ -151,18 +162,7 @@ dispatchKeys opts = wrap \case
                     p <- send $ GetLightPower l
                     send $ SetLightPower l $ not p
                 _ -> pure ()
-            _ -> case k of
-                KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
-                KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
-                KeyLeft -> modifyLight e $ #hue %~ subtract (hueInterval ctrl shift)
-                KeyRight -> modifyLight e $ #hue %~ (+ hueInterval ctrl shift)
-                KeyMinus -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedSub minBound 256
-                KeyEqual -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedAdd maxBound 256
-                KeyDown -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedSub minBound 256
-                KeyUp -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedAdd maxBound 256
-                KeyLeftbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedSub 1500 25
-                KeyRightbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedAdd 9000 25
-                _ -> pure ()
+            _ -> pure ()
         TV -> case k of
             KeySpace | e == Pressed -> act do
                 send $ SendIR IROnce IRTV "KEY_AUX"
