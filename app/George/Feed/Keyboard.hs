@@ -53,8 +53,14 @@ newtype TypingReason
     = TypingSpotifySearch Spotify.SearchType
 
 dispatchKeys :: (MonadIO m) => Opts -> Evdev.EventData -> KeyboardState -> m ([Event], KeyboardState)
-dispatchKeys opts event = wrap \KeyboardState{..} -> case (typing, modeChangeState) of
-    (Just (t, cs), _) -> case event of
+dispatchKeys opts = wrap \case
+    (KeyEvent KeyLeftctrl e, _) -> setMod #ctrl e >> pure []
+    (KeyEvent KeyRightctrl e, _) -> setMod #ctrl e >> pure []
+    (KeyEvent KeyLeftshift e, _) -> setMod #shift e >> pure []
+    (KeyEvent KeyRightshift e, _) -> setMod #shift e >> pure []
+    (KeyEvent KeyLeftalt e, _) -> setMod #alt e >> pure []
+    (KeyEvent KeyRightalt Pressed, _) -> #modeChangeState ?= Nothing >> pure []
+    (event, KeyboardState{typing = Just (t, cs), shift}) -> case event of
         KeyEvent KeyEsc Pressed -> #typing .= Nothing >> pure [LogEvent "Discarding keyboard input"]
         KeyEvent KeyEnter Pressed -> (#typing .= Nothing >>) case t of
             TypingSpotifySearch searchType -> act $ send $ SpotifySearchAndPlay searchType text
@@ -67,9 +73,9 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case (typing, modeChangeSta
             Nothing ->
                 pure [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
         _ -> pure []
-    (_, Just mk) -> case event of
+    (event, KeyboardState{modeChangeState = Just mk, mode = old, keyboards}) -> case event of
         KeyEvent KeyRightalt Released -> (#modeChangeState .= Nothing >>) case mk of
-            Nothing -> f previousMode
+            Nothing -> f =<< use #previousMode
             Just k -> case k of
                 KeyEsc -> f Idle
                 KeyQ -> f Quiet
@@ -78,7 +84,6 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case (typing, modeChangeSta
                 KeyComma -> f Sending
                 _ -> pure [LogEvent $ "Key does not correspond to any mode: " <> showT k]
           where
-            old = mode
             f new = do
                 #mode .= new
                 #previousMode .= old
@@ -96,13 +101,13 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case (typing, modeChangeSta
                             Quiet -> send $ SetSystemLEDs False
                             _ -> pure ()
                     ]
-        KeyEvent k _ | k /= KeyRightalt -> #modeChangeState ?= Just k >> pure []
+        KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?= Just k >> pure []
         _ -> pure []
-    (Nothing, Nothing) -> case mode of
+    (event, KeyboardState{..}) -> case mode of
         Idle -> pure []
         Quiet -> pure []
         Sending -> case event of
-            KeyEvent k e | k /= KeyRightalt -> simpleAct $ SendKey k e
+            KeyEvent k e -> simpleAct $ SendKey k e
             _ -> pure []
         Normal -> case event of
             KeyEvent KeyEsc Pressed | ctrl -> simpleAct Exit
@@ -193,20 +198,11 @@ dispatchKeys opts event = wrap \KeyboardState{..} -> case (typing, modeChangeSta
             KeyEvent KeyEsc e -> irHold e IRTV "KEY_EXIT"
             _ -> pure []
   where
-    wrap f = runStateT $ setMods >> get >>= f -- TODO this is only separated to stop Fourmolu from indenting
-    setMods = case event of
-        KeyEvent KeyLeftctrl e -> setMod #ctrl e
-        KeyEvent KeyRightctrl e -> setMod #ctrl e
-        KeyEvent KeyLeftshift e -> setMod #shift e
-        KeyEvent KeyRightshift e -> setMod #shift e
-        KeyEvent KeyLeftalt e -> setMod #alt e
-        KeyEvent KeyRightalt Pressed -> #modeChangeState ?= Nothing
-        _ -> pure ()
-      where
-        setMod l = \case
-            Pressed -> l .= True
-            Released -> l .= False
-            Repeated -> pure ()
+    wrap f e = runStateT $ get >>= \s -> f (e, s) -- TODO this is only separated to stop Fourmolu from indenting
+    setMod l = \case
+        Pressed -> l .= True
+        Released -> l .= False
+        Repeated -> pure ()
     simpleAct = act . send
     act = pure . pure . ActionEvent mempty
     irOnce = simpleAct .: SendIR IROnce
