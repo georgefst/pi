@@ -60,7 +60,39 @@ dispatchKeys opts = wrap \case
     (KeyEvent KeyLeftshift e, _) -> setMod #shift e
     (KeyEvent KeyRightshift e, _) -> setMod #shift e
     (KeyEvent KeyLeftalt e, _) -> setMod #alt e
-    (KeyEvent KeyRightalt Pressed, _) -> #modeChangeState ?= Nothing
+    (KeyEvent KeyRightalt e, KeyboardState{modeChangeState, keyboards, mode = old}) -> case e of
+        Pressed -> #modeChangeState ?= Nothing
+        _ -> case modeChangeState of
+            Nothing -> tell [ErrorEvent $ Error "Unexpected mode switch key event" e]
+            Just mk -> case e of
+                Repeated -> pure ()
+                Released -> (#modeChangeState .= Nothing >>) case mk of
+                    Nothing -> f =<< use #previousMode
+                    Just k -> case k of
+                        KeyEsc -> f Idle
+                        KeyQ -> f Quiet
+                        KeyDot -> f Normal
+                        KeyT -> f TV
+                        KeyComma -> f Sending
+                        _ -> tell [LogEvent $ "Key does not correspond to any mode: " <> showT k]
+              where
+                f new = do
+                    #mode .= new
+                    #previousMode .= old
+                    when (old == Idle) $ traverse_ (liftIO . Evdev.grabDevice) keyboards
+                    when (new == Idle) $ traverse_ (liftIO . Evdev.ungrabDevice) keyboards
+                    tell
+                        [ LogEvent $ "Changing keyboard mode: " <> showT new
+                        , ActionEvent mempty do
+                            for_ (opts.modeLED old) $ send . flip SetLED False
+                            for_ (opts.modeLED new) $ send . flip SetLED True
+                            case old of
+                                Quiet -> send $ SetSystemLEDs True
+                                _ -> pure ()
+                            case new of
+                                Quiet -> send $ SetSystemLEDs False
+                                _ -> pure ()
+                        ]
     (event, KeyboardState{typing = Just (t, cs), shift}) -> case event of
         KeyEvent KeyEsc Pressed -> #typing .= Nothing >> tell [LogEvent "Discarding keyboard input"]
         KeyEvent KeyEnter Pressed -> (#typing .= Nothing >>) case t of
@@ -74,35 +106,8 @@ dispatchKeys opts = wrap \case
             Nothing ->
                 tell [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
         _ -> pure ()
-    (event, KeyboardState{modeChangeState = Just mk, mode = old, keyboards}) -> case event of
-        KeyEvent KeyRightalt Released -> (#modeChangeState .= Nothing >>) case mk of
-            Nothing -> f =<< use #previousMode
-            Just k -> case k of
-                KeyEsc -> f Idle
-                KeyQ -> f Quiet
-                KeyDot -> f Normal
-                KeyT -> f TV
-                KeyComma -> f Sending
-                _ -> tell [LogEvent $ "Key does not correspond to any mode: " <> showT k]
-          where
-            f new = do
-                #mode .= new
-                #previousMode .= old
-                when (old == Idle) $ traverse_ (liftIO . Evdev.grabDevice) keyboards
-                when (new == Idle) $ traverse_ (liftIO . Evdev.ungrabDevice) keyboards
-                tell
-                    [ LogEvent $ "Changing keyboard mode: " <> showT new
-                    , ActionEvent mempty do
-                        for_ (opts.modeLED old) $ send . flip SetLED False
-                        for_ (opts.modeLED new) $ send . flip SetLED True
-                        case old of
-                            Quiet -> send $ SetSystemLEDs True
-                            _ -> pure ()
-                        case new of
-                            Quiet -> send $ SetSystemLEDs False
-                            _ -> pure ()
-                    ]
-        KeyEvent k e | (k, e) /= (KeyRightalt, Repeated) -> #modeChangeState ?= Just k
+    (event, KeyboardState{modeChangeState = Just _}) -> case event of
+        KeyEvent k _ -> #modeChangeState ?= Just k
         _ -> pure ()
     (event, KeyboardState{..}) -> case mode of
         Idle -> pure ()
