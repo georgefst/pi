@@ -102,9 +102,8 @@ dispatchKeys opts = wrap \case
         KeyEnter -> (#typing .= Nothing >>) case t of
             TypingSpotifySearch searchType ->
                 act $ send . SpotifySearchAndPlay searchType text =<< send (SpotifyGetDevice speakerName)
-              where
-                -- TODO why can't I de-indent this where? GHC bug?
-                text = T.pack $ reverse cs
+          where
+            text = T.pack $ reverse cs
         KeyBackspace -> #typing ?= (t, tailSafe cs)
         _ -> case keyToChar shift k of
             Just c -> #typing ?= (t, c : cs)
