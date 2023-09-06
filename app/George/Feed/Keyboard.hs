@@ -77,7 +77,7 @@ dispatchKeys opts = wrap \case
                             KeyDot -> pure Normal
                             KeyT -> pure TV
                             KeyComma -> pure Sending
-                            _ -> throwError $ LogEvent $ "Key does not correspond to any mode: " <> showT k
+                            _ -> throwError $ ErrorEvent $ Error "Key does not correspond to any mode" k
                     #mode .= new
                     #previousMode .= old
                     when (old == Idle) $ traverse_ (liftIO . Evdev.grabDevice) keyboards
