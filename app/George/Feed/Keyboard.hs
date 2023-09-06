@@ -207,7 +207,7 @@ dispatchKeys opts = wrap \case
         -- this was originally separated to stop Fourmolu from indenting - it's now used to build a sort of DSL
         fmap (\(((), s), es) -> (es, s)) . runWriterT . runStateT case e0 of
             KeyEvent k e -> get >>= \s -> f (k, e, s)
-            _ -> pure ()
+            e -> tell [LogEvent $ "Unexpected evdev event: " <> showT e]
     setMod l = \case
         Pressed -> l .= True
         Released -> l .= False
