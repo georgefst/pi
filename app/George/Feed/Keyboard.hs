@@ -108,30 +108,29 @@ dispatchKeys opts = wrap \case
             Just c -> #typing ?= (t, c : cs)
             Nothing ->
                 tell [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
-    (k, e@((== Pressed) -> pressed), KeyboardState{..}) -> case mode of
+    (k, e, KeyboardState{..}) -> case mode of
         Idle -> pure ()
         Quiet -> pure ()
         Sending -> simpleAct $ SendKey k e
-        Normal -> case k of
-            KeyEsc | pressed, ctrl -> simpleAct Exit
-            KeyR | pressed, ctrl -> simpleAct ResetError
-            KeyL | pressed, ctrl, shift -> startSpotifySearch Spotify.AlbumSearch
-            KeyA | pressed, ctrl, shift -> startSpotifySearch Spotify.ArtistSearch
-            KeyP | pressed, ctrl, shift -> startSpotifySearch Spotify.PlaylistSearch
-            KeyS | pressed, ctrl, shift -> startSpotifySearch Spotify.TrackSearch
-            KeyW | pressed, ctrl, shift -> startSpotifySearch Spotify.ShowSearch
-            KeyE | pressed, ctrl, shift -> startSpotifySearch Spotify.EpisodeSearch
-            KeyB | pressed, ctrl, shift -> startSpotifySearch Spotify.AudiobookSearch
-            KeyP
-                -- TODO Fourmolu is annoying here
-                | pressed ->
+        Normal -> case e of
+          Pressed -> case k of
+            KeyEsc | ctrl -> simpleAct Exit
+            KeyR | ctrl -> simpleAct ResetError
+            KeyL | ctrl, shift -> startSpotifySearch Spotify.AlbumSearch
+            KeyA | ctrl, shift -> startSpotifySearch Spotify.ArtistSearch
+            KeyP | ctrl, shift -> startSpotifySearch Spotify.PlaylistSearch
+            KeyS | ctrl, shift -> startSpotifySearch Spotify.TrackSearch
+            KeyW | ctrl, shift -> startSpotifySearch Spotify.ShowSearch
+            KeyE | ctrl, shift -> startSpotifySearch Spotify.EpisodeSearch
+            KeyB | ctrl, shift -> startSpotifySearch Spotify.AudiobookSearch
+            KeyP ->
                     if ctrl
                         then simpleAct ToggleHifiPlug
                         else act do
                             send $ SendIR IROnce IRHifi "KEY_POWER"
                             send $ Sleep 1
                             send $ SendIR IROnce IRHifi "KEY_TAPE"
-            KeyS | pressed -> act do
+            KeyS -> act do
                 send NextLight
                 l <- send GetCurrentLight
                 Lifx.LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
@@ -142,15 +141,17 @@ dispatchKeys opts = wrap \case
                 when wasOff $ send $ SetLightPower l False
               where
                 flashTime = 0.35
-            KeyMute | pressed -> irOnce IRHifi "muting"
-            KeyPlaypause | pressed -> simpleAct $ Mpris "PlayPause"
-            KeyPrevioussong | pressed -> simpleAct $ Mpris "Previous"
-            KeyNextsong | pressed -> simpleAct $ Mpris "Next"
-            KeyR | pressed -> simpleAct LightReScan
-            KeyL | pressed -> act do
+            KeyMute -> irOnce IRHifi "muting"
+            KeyPlaypause -> simpleAct $ Mpris "PlayPause"
+            KeyPrevioussong -> simpleAct $ Mpris "Previous"
+            KeyNextsong -> simpleAct $ Mpris "Next"
+            KeyR -> simpleAct LightReScan
+            KeyL -> act do
                 l <- send GetCurrentLight
                 p <- send $ GetLightPower l
                 send $ SetLightPower l $ not p
+            _ -> pure ()
+          _ -> case k of
             KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
             KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
             KeyLeft -> modifyLight e $ #hue %~ subtract (hueInterval ctrl shift)
@@ -163,7 +164,7 @@ dispatchKeys opts = wrap \case
             KeyRightbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedAdd 9000 25
             _ -> pure ()
         TV -> case k of
-            KeySpace | pressed -> act do
+            KeySpace | e == Pressed -> act do
                 send $ SendIR IROnce IRTV "KEY_AUX"
                 send $ Sleep t
                 send $ SendIR IROnce IRTV "KEY_AUX"
