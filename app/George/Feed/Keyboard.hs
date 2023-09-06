@@ -94,6 +94,8 @@ dispatchKeys opts = wrap \case
                                 Quiet -> send $ SetSystemLEDs False
                                 _ -> pure ()
                         ]
+    (k, _, KeyboardState{modeChangeState = Just _}) ->
+        #modeChangeState ?= Just k
     (k, Pressed, KeyboardState{typing = Just (t, cs), shift}) -> case k of
         KeyEsc -> #typing .= Nothing >> tell [LogEvent "Discarding keyboard input"]
         KeyEnter -> (#typing .= Nothing >>) case t of
@@ -106,8 +108,6 @@ dispatchKeys opts = wrap \case
             Just c -> #typing ?= (t, c : cs)
             Nothing ->
                 tell [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
-    (k, _, KeyboardState{modeChangeState = Just _}) ->
-        #modeChangeState ?= Just k
     (k, e@((== Pressed) -> pressed), KeyboardState{..}) -> case mode of
         Idle -> pure ()
         Quiet -> pure ()
