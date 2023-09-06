@@ -113,56 +113,56 @@ dispatchKeys opts = wrap \case
         Quiet -> pure ()
         Sending -> simpleAct $ SendKey k e
         Normal -> case k of
-          KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
-          KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
-          KeyLeft -> modifyLight e $ #hue %~ subtract (hueInterval ctrl shift)
-          KeyRight -> modifyLight e $ #hue %~ (+ hueInterval ctrl shift)
-          KeyMinus -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedSub minBound 256
-          KeyEqual -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedAdd maxBound 256
-          KeyDown -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedSub minBound 256
-          KeyUp -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedAdd maxBound 256
-          KeyLeftbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedSub 1500 25
-          KeyRightbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedAdd 9000 25
-          _ -> case e of
-            Pressed -> case k of
-                KeyEsc | ctrl -> simpleAct Exit
-                KeyR | ctrl -> simpleAct ResetError
-                KeyL | ctrl, shift -> startSpotifySearch Spotify.AlbumSearch
-                KeyA | ctrl, shift -> startSpotifySearch Spotify.ArtistSearch
-                KeyP | ctrl, shift -> startSpotifySearch Spotify.PlaylistSearch
-                KeyS | ctrl, shift -> startSpotifySearch Spotify.TrackSearch
-                KeyW | ctrl, shift -> startSpotifySearch Spotify.ShowSearch
-                KeyE | ctrl, shift -> startSpotifySearch Spotify.EpisodeSearch
-                KeyB | ctrl, shift -> startSpotifySearch Spotify.AudiobookSearch
-                KeyP ->
-                    if ctrl
-                        then simpleAct ToggleHifiPlug
-                        else act do
-                            send $ SendIR IROnce IRHifi "KEY_POWER"
-                            send $ Sleep 1
-                            send $ SendIR IROnce IRHifi "KEY_TAPE"
-                KeyS -> act do
-                    send NextLight
-                    l <- send GetCurrentLight
-                    Lifx.LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
-                    when wasOff $ send $ SetLightPower l True
-                    send $ SetLightColour False l flashTime $ hsbk & #brightness %~ (`div` 2)
-                    send $ Sleep flashTime
-                    send $ SetLightColour False l flashTime hsbk
-                    when wasOff $ send $ SetLightPower l False
-                  where
-                    flashTime = 0.35
-                KeyMute -> irOnce IRHifi "muting"
-                KeyPlaypause -> simpleAct $ Mpris "PlayPause"
-                KeyPrevioussong -> simpleAct $ Mpris "Previous"
-                KeyNextsong -> simpleAct $ Mpris "Next"
-                KeyR -> simpleAct LightReScan
-                KeyL -> act do
-                    l <- send GetCurrentLight
-                    p <- send $ GetLightPower l
-                    send $ SetLightPower l $ not p
+            KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
+            KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
+            KeyLeft -> modifyLight e $ #hue %~ subtract (hueInterval ctrl shift)
+            KeyRight -> modifyLight e $ #hue %~ (+ hueInterval ctrl shift)
+            KeyMinus -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedSub minBound 256
+            KeyEqual -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedAdd maxBound 256
+            KeyDown -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedSub minBound 256
+            KeyUp -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedAdd maxBound 256
+            KeyLeftbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedSub 1500 25
+            KeyRightbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedAdd 9000 25
+            _ -> case e of
+                Pressed -> case k of
+                    KeyEsc | ctrl -> simpleAct Exit
+                    KeyR | ctrl -> simpleAct ResetError
+                    KeyL | ctrl, shift -> startSpotifySearch Spotify.AlbumSearch
+                    KeyA | ctrl, shift -> startSpotifySearch Spotify.ArtistSearch
+                    KeyP | ctrl, shift -> startSpotifySearch Spotify.PlaylistSearch
+                    KeyS | ctrl, shift -> startSpotifySearch Spotify.TrackSearch
+                    KeyW | ctrl, shift -> startSpotifySearch Spotify.ShowSearch
+                    KeyE | ctrl, shift -> startSpotifySearch Spotify.EpisodeSearch
+                    KeyB | ctrl, shift -> startSpotifySearch Spotify.AudiobookSearch
+                    KeyP ->
+                        if ctrl
+                            then simpleAct ToggleHifiPlug
+                            else act do
+                                send $ SendIR IROnce IRHifi "KEY_POWER"
+                                send $ Sleep 1
+                                send $ SendIR IROnce IRHifi "KEY_TAPE"
+                    KeyS -> act do
+                        send NextLight
+                        l <- send GetCurrentLight
+                        Lifx.LightState{power = (== 0) -> wasOff, ..} <- send $ GetLightState l
+                        when wasOff $ send $ SetLightPower l True
+                        send $ SetLightColour False l flashTime $ hsbk & #brightness %~ (`div` 2)
+                        send $ Sleep flashTime
+                        send $ SetLightColour False l flashTime hsbk
+                        when wasOff $ send $ SetLightPower l False
+                      where
+                        flashTime = 0.35
+                    KeyMute -> irOnce IRHifi "muting"
+                    KeyPlaypause -> simpleAct $ Mpris "PlayPause"
+                    KeyPrevioussong -> simpleAct $ Mpris "Previous"
+                    KeyNextsong -> simpleAct $ Mpris "Next"
+                    KeyR -> simpleAct LightReScan
+                    KeyL -> act do
+                        l <- send GetCurrentLight
+                        p <- send $ GetLightPower l
+                        send $ SetLightPower l $ not p
+                    _ -> pure ()
                 _ -> pure ()
-            _ -> pure ()
         TV -> case k of
             KeySpace | e == Pressed -> act do
                 send $ SendIR IROnce IRTV "KEY_AUX"
