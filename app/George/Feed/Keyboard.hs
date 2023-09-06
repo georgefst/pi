@@ -66,7 +66,7 @@ dispatchKeys opts = wrap \case
             Nothing -> tell [ErrorEvent $ Error "Unexpected mode switch key event" e]
             Just mk -> case e of
                 Repeated -> pure ()
-                Released -> (either (tell . pure) pure <=< runExceptT) do
+                Released -> (either (tell . pure . ErrorEvent) pure <=< runExceptT) do
                     #modeChangeState .= Nothing
                     let old = mode
                     new <- case mk of
@@ -77,7 +77,7 @@ dispatchKeys opts = wrap \case
                             KeyDot -> pure Normal
                             KeyT -> pure TV
                             KeyComma -> pure Sending
-                            _ -> throwError $ ErrorEvent $ Error "Key does not correspond to any mode" k
+                            _ -> throwError $ Error "Key does not correspond to any mode" k
                     #mode .= new
                     #previousMode .= old
                     when (old == Idle) $ traverse_ (liftIO . Evdev.grabDevice) keyboards
