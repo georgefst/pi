@@ -60,23 +60,24 @@ dispatchKeys opts = wrap \case
     (KeyEvent KeyLeftshift e, _) -> setMod #shift e
     (KeyEvent KeyRightshift e, _) -> setMod #shift e
     (KeyEvent KeyLeftalt e, _) -> setMod #alt e
-    (KeyEvent KeyRightalt e, KeyboardState{modeChangeState, keyboards, mode = old}) -> case e of
+    (KeyEvent KeyRightalt e, KeyboardState{modeChangeState, keyboards, mode, previousMode}) -> case e of
         Pressed -> #modeChangeState ?= Nothing
         _ -> case modeChangeState of
             Nothing -> tell [ErrorEvent $ Error "Unexpected mode switch key event" e]
             Just mk -> case e of
                 Repeated -> pure ()
-                Released -> (#modeChangeState .= Nothing >>) case mk of
-                    Nothing -> f =<< use #previousMode
-                    Just k -> case k of
-                        KeyEsc -> f Idle
-                        KeyQ -> f Quiet
-                        KeyDot -> f Normal
-                        KeyT -> f TV
-                        KeyComma -> f Sending
-                        _ -> tell [LogEvent $ "Key does not correspond to any mode: " <> showT k]
-              where
-                f new = do
+                Released -> (either (tell . pure) pure <=< runExceptT) do
+                    #modeChangeState .= Nothing
+                    let old = mode
+                    new <- case mk of
+                        Nothing -> pure previousMode
+                        Just k -> case k of
+                            KeyEsc -> pure Idle
+                            KeyQ -> pure Quiet
+                            KeyDot -> pure Normal
+                            KeyT -> pure TV
+                            KeyComma -> pure Sending
+                            _ -> throwError $ LogEvent $ "Key does not correspond to any mode: " <> showT k
                     #mode .= new
                     #previousMode .= old
                     when (old == Idle) $ traverse_ (liftIO . Evdev.grabDevice) keyboards
