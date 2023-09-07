@@ -68,6 +68,7 @@ dispatchKeys opts = wrap \case
                         Nothing -> pure previousMode
                         Just k -> case k of
                             KeyEsc -> pure Idle
+                            KeySlash -> pure Idle
                             KeyQ -> pure Quiet
                             KeyDot -> pure Normal
                             KeyT -> pure TV
