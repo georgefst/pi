@@ -237,7 +237,7 @@ dispatchKeys opts = wrap \case
 
 feed :: (S.MonadAsync m, MonadLog Text m) => [Text] -> Mode -> Opts -> S.Stream m [Event]
 feed keyboardNames initialMode opts =
-    scanStream
+    ((fmap snd .) . S.runStateT . pure)
         ( KeyboardState
             { keyboards = mempty
             , mode = initialMode
@@ -249,9 +249,9 @@ feed keyboardNames initialMode opts =
             , typing = Nothing
             }
         )
-        ( uncurry \d ->
-            runStateT
-                . either
+        . S.mapM
+            ( uncurry \d ->
+                either
                     ( either
                         ( \() -> do
                             logMessage $ "Evdev device added: " <> decodeUtf8 (Evdev.devicePath d)
@@ -268,7 +268,7 @@ feed keyboardNames initialMode opts =
                         )
                     )
                     (StateT . dispatchKeys opts . Evdev.eventData)
-        )
+            )
         -- I can't find a reliable heuristic for "basically a keyboard" so we filter by name
         . S.filterM (fmap ((`elem` keyboardNames) . decodeUtf8) . liftIO . Evdev.deviceName . fst)
         . readEventsMany
