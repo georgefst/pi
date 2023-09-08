@@ -4,13 +4,17 @@ module George.Feed.Keyboard (feed, Opts (..), Mode (..)) where
 import George.Core
 import Util
 
+import Control.Concurrent
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Freer
 import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.State.Strict
 import Control.Monad.Writer
+import Data.Bifunctor
+import Data.Either
 import Data.Foldable
+import Data.IORef
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -39,7 +43,7 @@ data KeyboardState = KeyboardState
     , ctrl :: Bool
     , alt :: Bool
     , modeChangeState :: Maybe (Maybe Key)
-    , typing :: Maybe (TypingReason, [Char])
+    , typing :: Maybe (TypingReason, [Char], IORef Bool)
     }
     deriving (Generic)
 data Mode
@@ -53,15 +57,15 @@ data Mode
 newtype TypingReason
     = TypingSpotifySearch Spotify.SearchType
 
-dispatchKeys :: (MonadIO m) => Opts -> Evdev.EventData -> KeyboardState -> m ([Event], KeyboardState)
+dispatchKeys :: (S.MonadAsync m) => Opts -> Evdev.EventData -> KeyboardState -> m (([Event], S.Stream m [Event]), KeyboardState)
 dispatchKeys opts = wrap \case
     (KeyRightalt, e, KeyboardState{modeChangeState, keyboards, mode, previousMode}) -> case e of
         Pressed -> #modeChangeState ?= Nothing
         _ -> case modeChangeState of
-            Nothing -> tell [ErrorEvent $ Error "Unexpected mode switch key event" e]
+            Nothing -> evs [ErrorEvent $ Error "Unexpected mode switch key event" e]
             Just mk -> case e of
                 Repeated -> pure ()
-                Released -> (either (tell . pure . ErrorEvent) pure <=< runExceptT) do
+                Released -> (either (evs . pure . ErrorEvent) pure <=< runExceptT) do
                     #modeChangeState .= Nothing
                     let old = mode
                     new <- case mk of
@@ -78,7 +82,7 @@ dispatchKeys opts = wrap \case
                     #previousMode .= old
                     when (old == Idle) $ traverse_ (liftIO . Evdev.grabDevice) keyboards
                     when (new == Idle) $ traverse_ (liftIO . Evdev.ungrabDevice) keyboards
-                    tell
+                    evs
                         [ LogEvent $ "Changing keyboard mode: " <> showT new
                         , ActionEvent mempty do
                             for_ (opts.modeLED old) $ send . flip SetLED False
@@ -98,18 +102,20 @@ dispatchKeys opts = wrap \case
     (KeyLeftshift, e, _) -> setMod #shift e
     (KeyRightshift, e, _) -> setMod #shift e
     (KeyLeftalt, e, _) -> setMod #alt e
-    (k, Pressed, KeyboardState{typing = Just (t, cs), shift}) -> case k of
-        KeyEsc -> #typing .= Nothing >> tell [LogEvent "Discarding keyboard input"]
-        KeyEnter -> (#typing .= Nothing >>) case t of
+    (k, Pressed, KeyboardState{typing = Just (t, cs, ref), shift}) -> case k of
+        KeyEsc -> finishTyping >> evs [LogEvent "Discarding keyboard input"]
+        KeyEnter -> (finishTyping >>) case t of
             TypingSpotifySearch searchType ->
                 act $ send . SpotifySearchAndPlay searchType text =<< send (SpotifyGetDevice speakerName)
           where
             text = T.pack $ reverse cs
-        KeyBackspace -> #typing ?= (t, tailSafe cs)
+        KeyBackspace -> #typing % mapped % _2 %= tailSafe
         _ -> case keyToChar shift k of
-            Just c -> #typing ?= (t, c : cs)
+            Just c -> #typing % mapped % _2 %= (c :)
             Nothing ->
-                tell [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
+                evs [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
+      where
+        finishTyping = #typing .= Nothing >> liftIO (writeIORef ref False)
     (k, e, KeyboardState{..}) -> case mode of
         Idle -> pure ()
         Quiet -> pure ()
@@ -128,13 +134,13 @@ dispatchKeys opts = wrap \case
                 Pressed -> case k of
                     KeyEsc | ctrl -> simpleAct Exit
                     KeyR | ctrl -> simpleAct ResetError
-                    KeyL | ctrl, shift -> startSpotifySearch Spotify.AlbumSearch
-                    KeyA | ctrl, shift -> startSpotifySearch Spotify.ArtistSearch
-                    KeyP | ctrl, shift -> startSpotifySearch Spotify.PlaylistSearch
-                    KeyS | ctrl, shift -> startSpotifySearch Spotify.TrackSearch
-                    KeyW | ctrl, shift -> startSpotifySearch Spotify.ShowSearch
-                    KeyE | ctrl, shift -> startSpotifySearch Spotify.EpisodeSearch
-                    KeyB | ctrl, shift -> startSpotifySearch Spotify.AudiobookSearch
+                    KeyL | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.AlbumSearch
+                    KeyA | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.ArtistSearch
+                    KeyP | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.PlaylistSearch
+                    KeyS | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.TrackSearch
+                    KeyW | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.ShowSearch
+                    KeyE | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.EpisodeSearch
+                    KeyB | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.AudiobookSearch
                     KeyP ->
                         if ctrl
                             then simpleAct ToggleHifiPlug
@@ -208,15 +214,16 @@ dispatchKeys opts = wrap \case
   where
     wrap f e0 =
         -- this was originally separated to stop Fourmolu from indenting - it's now used to build a sort of DSL
-        fmap (\(((), s), es) -> (es, s)) . runWriterT . runStateT case e0 of
+        fmap (\(((), s), es) -> (second (S.parList id) $ partitionEithers es, s)) . runWriterT . runStateT case e0 of
             KeyEvent k e -> get >>= \s -> f (k, e, s)
             _ -> pure ()
     setMod l = \case
         Pressed -> l .= True
         Released -> l .= False
         Repeated -> pure ()
+    evs = tell . map Left
     simpleAct = act . send
-    act = tell . pure . ActionEvent mempty
+    act = evs . pure . ActionEvent mempty
     irOnce = simpleAct .: SendIR IROnce
     irHold = \case
         Pressed -> simpleAct .: SendIR IRStart
@@ -232,12 +239,26 @@ dispatchKeys opts = wrap \case
       where
         setColour useCache l = send . SetLightColour True l 0 . f =<< send (GetLightColour useCache l)
     incrementLightField ctrl shift f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
-    startSpotifySearch t = #typing ?= (TypingSpotifySearch t, []) >> tell [LogEvent "Waiting for keyboard input"]
+    startTyping t = do
+        ref <- liftIO $ newIORef True
+        #typing ?= (t, [], ref)
+        mode <- use #mode
+        tell
+            [ Left $ LogEvent "Waiting for keyboard input"
+            , Right case opts.modeLED mode of
+                Just led ->
+                    S.takeWhileM (const $ liftIO $ readIORef ref) . S.concatMap id . S.repeat $
+                        (S.consM pause . S.cons [setLED False] . S.consM pause . S.cons [setLED True] $ S.nil)
+                  where
+                    pause = liftIO (threadDelay 300_000) >> pure []
+                    setLED = ActionEvent mempty . send . SetLED led
+                Nothing -> S.nil
+            ]
     speakerName = "pi"
 
 feed :: (S.MonadAsync m, MonadLog Text m) => [Text] -> Mode -> Opts -> S.Stream m [Event]
 feed keyboardNames initialMode opts =
-    ((fmap snd .) . S.runStateT . pure)
+    (((S.parConcat id . fmap (uncurry S.cons . snd)) .) . S.runStateT . pure)
         ( KeyboardState
             { keyboards = mempty
             , mode = initialMode
@@ -259,12 +280,12 @@ feed keyboardNames initialMode opts =
                             -- TODO unify "always grabbed unless in Idle mode" logic somewhere?
                             mode <- use #mode
                             when (mode /= Idle) $ liftIO $ Evdev.grabDevice d
-                            pure []
+                            pure ([], S.nil)
                         )
                         ( \e -> do
                             logMessage $ "Evdev device removed: " <> showT e
                             #keyboards %= Set.delete d
-                            pure []
+                            pure ([], S.nil)
                         )
                     )
                     (StateT . dispatchKeys opts . Evdev.eventData)
