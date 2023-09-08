@@ -27,6 +27,7 @@ import Optics.State.Operators
 import Options.Generic
 import Spotify.Types.Search qualified as Spotify
 import Streamly.Data.Stream.Prelude qualified as S
+import Prelude hiding (log)
 
 newtype Opts = Opts
     { modeLED :: Mode -> Maybe Int
@@ -60,10 +61,10 @@ dispatchKeys opts = wrap \case
     (KeyRightalt, e, KeyboardState{modeChangeState, keyboards, mode, previousMode}) -> case e of
         Pressed -> #modeChangeState ?= Nothing
         _ -> case modeChangeState of
-            Nothing -> evs [ErrorEvent $ Error "Unexpected mode switch key event" e]
+            Nothing -> err $ Error "Unexpected mode switch key event" e
             Just mk -> case e of
                 Repeated -> pure ()
-                Released -> (either (evs . pure . ErrorEvent) pure <=< runExceptT) do
+                Released -> (either err pure <=< runExceptT) do
                     #modeChangeState .= Nothing
                     let old = mode
                     new <- case mk of
@@ -101,7 +102,7 @@ dispatchKeys opts = wrap \case
     (KeyRightshift, e, _) -> setMod #shift e
     (KeyLeftalt, e, _) -> setMod #alt e
     (k, Pressed, KeyboardState{typing = Just (t, cs, finish), shift}) -> case k of
-        KeyEsc -> finishTyping >> evs [LogEvent "Discarding keyboard input"]
+        KeyEsc -> finishTyping >> log "Discarding keyboard input"
         KeyEnter -> (finishTyping >>) case t of
             TypingSpotifySearch searchType ->
                 act $ send . SpotifySearchAndPlay searchType text =<< send (SpotifyGetDevice speakerName)
@@ -110,8 +111,7 @@ dispatchKeys opts = wrap \case
         KeyBackspace -> #typing % mapped % _2 %= tailSafe
         _ -> case keyToChar shift k of
             Just c -> #typing % mapped % _2 %= (c :)
-            Nothing ->
-                evs [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
+            Nothing -> log $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k
       where
         finishTyping = #typing .= Nothing >> liftIO finish
     (k, e, KeyboardState{..}) -> case mode of
@@ -220,6 +220,8 @@ dispatchKeys opts = wrap \case
         Released -> l .= False
         Repeated -> pure ()
     evs = tell . pure . S.fromPure
+    err = evs . pure . ErrorEvent
+    log = evs . pure . LogEvent
     simpleAct = act . send
     act = evs . pure . ActionEvent mempty
     irOnce = simpleAct .: SendIR IROnce
@@ -241,7 +243,7 @@ dispatchKeys opts = wrap \case
         ref <- liftIO $ newIORef True
         #typing ?= (t, [], writeIORef ref False)
         mode <- use #mode
-        evs [LogEvent "Waiting for keyboard input"]
+        log "Waiting for keyboard input"
         tell $ pure case opts.modeLED mode of
             Nothing -> S.nil
             Just led ->
