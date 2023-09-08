@@ -241,14 +241,15 @@ dispatchKeys opts = wrap \case
         ref <- liftIO $ newIORef True
         #typing ?= (t, [], writeIORef ref False)
         mode <- use #mode
-        tell . pure $ S.cons [LogEvent "Waiting for keyboard input"] case opts.modeLED mode of
+        evs [LogEvent "Waiting for keyboard input"]
+        tell $ pure case opts.modeLED mode of
+            Nothing -> S.nil
             Just led ->
                 S.takeWhileM (const $ liftIO $ readIORef ref) . S.concatMap id . S.repeat $
                     (S.consM pause . S.cons [setLED False] . S.consM pause . S.cons [setLED True] $ S.nil)
               where
                 pause = liftIO (threadDelay 300_000) >> pure []
                 setLED = ActionEvent mempty . send . SetLED led
-            Nothing -> S.nil
     speakerName = "pi"
 
 feed :: (S.MonadAsync m, MonadLog Text m) => [Text] -> Mode -> Opts -> S.Stream m [Event]
