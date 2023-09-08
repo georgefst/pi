@@ -43,7 +43,7 @@ data KeyboardState = KeyboardState
     , ctrl :: Bool
     , alt :: Bool
     , modeChangeState :: Maybe (Maybe Key)
-    , typing :: Maybe (TypingReason, [Char], IORef Bool)
+    , typing :: Maybe (TypingReason, [Char], IO ())
     }
     deriving (Generic)
 data Mode
@@ -102,7 +102,7 @@ dispatchKeys opts = wrap \case
     (KeyLeftshift, e, _) -> setMod #shift e
     (KeyRightshift, e, _) -> setMod #shift e
     (KeyLeftalt, e, _) -> setMod #alt e
-    (k, Pressed, KeyboardState{typing = Just (t, cs, ref), shift}) -> case k of
+    (k, Pressed, KeyboardState{typing = Just (t, cs, finish), shift}) -> case k of
         KeyEsc -> finishTyping >> evs [LogEvent "Discarding keyboard input"]
         KeyEnter -> (finishTyping >>) case t of
             TypingSpotifySearch searchType ->
@@ -115,7 +115,7 @@ dispatchKeys opts = wrap \case
             Nothing ->
                 evs [LogEvent $ "Ignoring non-character keypress" <> mwhen shift " (with shift)" <> ": " <> showT k]
       where
-        finishTyping = #typing .= Nothing >> liftIO (writeIORef ref False)
+        finishTyping = #typing .= Nothing >> liftIO finish
     (k, e, KeyboardState{..}) -> case mode of
         Idle -> pure ()
         Quiet -> pure ()
@@ -241,7 +241,7 @@ dispatchKeys opts = wrap \case
     incrementLightField ctrl shift f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
     startTyping t = do
         ref <- liftIO $ newIORef True
-        #typing ?= (t, [], ref)
+        #typing ?= (t, [], writeIORef ref False)
         mode <- use #mode
         tell
             [ Left $ LogEvent "Waiting for keyboard input"
