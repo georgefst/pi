@@ -245,8 +245,11 @@ dispatchKeys opts = wrap \case
         tell $ pure case opts.modeLED mode of
             Nothing -> S.nil
             Just led ->
-                S.takeWhileM (const $ liftIO $ readIORef ref) . S.concatMap id . S.repeat $
-                    (S.consM pause . S.cons [setLED False] . S.consM pause . S.cons [setLED True] $ S.nil)
+                flip S.append (S.fromPure [setLED True])
+                    . S.takeWhileM (const $ liftIO $ readIORef ref)
+                    . S.concatMap id
+                    . S.repeat
+                    $ (S.consM pause . S.cons [setLED False] . S.consM pause . S.cons [setLED True] $ S.nil)
               where
                 pause = liftIO (threadDelay 300_000) >> pure []
                 setLED = ActionEvent mempty . send . SetLED led
