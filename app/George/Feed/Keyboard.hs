@@ -8,9 +8,9 @@ import Control.Concurrent
 import Control.Monad
 import Control.Monad.Except
 import Control.Monad.Freer
-import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.State.Strict
 import Control.Monad.Writer
+import Data.Bifunctor
 import Data.Foldable
 import Data.IORef
 import Data.Set (Set)
@@ -55,7 +55,7 @@ data Mode
 newtype TypingReason
     = TypingSpotifySearch Spotify.SearchType
 
-dispatchKeys :: (S.MonadAsync m) => Opts -> Evdev.EventData -> KeyboardState -> m (S.Stream m [Event], KeyboardState)
+dispatchKeys :: Opts -> Evdev.EventData -> KeyboardState -> IO (S.Stream IO [Event], KeyboardState)
 dispatchKeys opts = wrap \case
     (KeyRightalt, e, KeyboardState{modeChangeState, keyboards, mode, previousMode}) -> case e of
         Pressed -> #modeChangeState ?= Nothing
@@ -252,7 +252,7 @@ dispatchKeys opts = wrap \case
                 setLED = ActionEvent mempty . send . SetLED led
     speakerName = "pi"
 
-feed :: (S.MonadAsync m, MonadLog Text m) => [Text] -> Mode -> Opts -> S.Stream m [Event]
+feed :: [Text] -> Mode -> Opts -> S.Stream IO [Event]
 feed keyboardNames initialMode opts =
     (((S.parConcat id . fmap snd) .) . S.runStateT . pure)
         ( KeyboardState
@@ -266,37 +266,40 @@ feed keyboardNames initialMode opts =
             , typing = Nothing
             }
         )
-        . S.mapM
-            ( uncurry \d ->
-                either
-                    ( either
-                        ( \() -> do
-                            logMessage $ "Evdev device added: " <> decodeUtf8 (Evdev.devicePath d)
-                            #keyboards %= Set.insert d
-                            -- TODO unify "always grabbed unless in Idle mode" logic somewhere?
-                            mode <- use #mode
-                            when (mode /= Idle) $ liftIO $ Evdev.grabDevice d
-                            pure S.nil
+        . uncurry S.cons
+        . second
+            ( S.mapM
+                ( uncurry \d ->
+                    either
+                        ( either
+                            ( \() -> do
+                                #keyboards %= Set.insert d
+                                -- TODO unify "always grabbed unless in Idle mode" logic somewhere?
+                                mode <- use #mode
+                                when (mode /= Idle) $ liftIO $ Evdev.grabDevice d
+                                pure $ S.fromPure [LogEvent $ "Evdev device added: " <> decodeUtf8 (Evdev.devicePath d)]
+                            )
+                            ( \e -> do
+                                #keyboards %= Set.delete d
+                                pure $ S.fromPure [LogEvent $ "Evdev device removed: " <> showT e]
+                            )
                         )
-                        ( \e -> do
-                            logMessage $ "Evdev device removed: " <> showT e
-                            #keyboards %= Set.delete d
-                            pure S.nil
-                        )
-                    )
-                    (StateT . dispatchKeys opts . Evdev.eventData)
+                        (StateT . dispatchKeys opts . Evdev.eventData)
+                )
+                . S.morphInner lift
+                -- I can't find a reliable heuristic for "basically a keyboard" so we filter by name
+                . S.filterM (fmap ((`elem` keyboardNames) . decodeUtf8) . liftIO . Evdev.deviceName . fst)
+                . readEventsMany
             )
-        -- I can't find a reliable heuristic for "basically a keyboard" so we filter by name
-        . S.filterM (fmap ((`elem` keyboardNames) . decodeUtf8) . liftIO . Evdev.deviceName . fst)
-        . readEventsMany
-        . S.mapMaybeM
+        -- TODO I'm a bit worried about what this might do to fusion - generalise `readEventsMany` instead?
+        . streamPartitionEithers
+        . S.mapM
             ( either
                 ( \(p, e) ->
-                    logMessage
-                        ("Couldn't create evdev device from " <> decodeUtf8 p <> ": " <> showT e)
-                        >> pure Nothing
+                    (pure . Left)
+                        [LogEvent $ "Couldn't create evdev device from " <> decodeUtf8 p <> ": " <> showT e]
                 )
-                (pure . Just)
+                (pure . Right)
             )
         . S.append allDevices
         $ newDevices' 1_000_000

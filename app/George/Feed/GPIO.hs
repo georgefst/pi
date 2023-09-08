@@ -15,7 +15,7 @@ data Opts = Opts
     , buttonPin :: Int
     }
 
-feed :: (S.MonadAsync m) => Opts -> S.Stream m [Event]
+feed :: Opts -> S.Stream IO [Event]
 feed opts = emitterToStream \f ->
     GPIO.mon
         opts.gpioChip

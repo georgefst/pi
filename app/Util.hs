@@ -153,6 +153,10 @@ emitterToStream f = streamWithInit (liftIO newEmptyMVar) \m ->
         , S.repeatM $ Just <$> liftIO (takeMVar m)
         ]
 
+-- TODO can this be implemented more efficiently in a single pass?
+streamPartitionEithers :: (Monad m) => S.Stream m (Either a b) -> (S.Stream m a, S.Stream m b)
+streamPartitionEithers s = (S.catLefts s, S.catRights s)
+
 -- bool indicates whether shift held
 -- TODO make this more complete and general and less anglocentric...
 keyToChar :: Bool -> Evdev.Key -> Maybe Char

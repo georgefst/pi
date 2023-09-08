@@ -74,7 +74,7 @@ runEventStream ::
     (Error -> m ()) ->
     (Text -> m ()) ->
     (forall a. Action a -> ExceptT Error m a) ->
-    S.Stream m [Event] ->
+    S.Stream IO [Event] ->
     m ()
 runEventStream handleError log' run' =
     S.fold
@@ -89,6 +89,7 @@ runEventStream handleError log' run' =
                 sendM . lift . log' $ showT r
                 sendM . liftIO $ f r
         )
+        . S.morphInner liftIO
         . S.concatMap S.fromList
         . S.cons [LogEvent "Starting..."]
 

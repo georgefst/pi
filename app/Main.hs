@@ -111,6 +111,7 @@ main = do
             (lifxTime opts.lifxTimeout)
             (Just $ fromIntegral opts.lifxPort)
         . runEventStream handleError logMessage (runAction (opts & \Opts{..} -> ActionOpts{..}))
+        . S.morphInner liftIO
         . S.append
             -- flash all lights to show we have finished initialising
             ( S.fromList
@@ -121,7 +122,6 @@ main = do
                     <> [Sleep 0.5]
                     <> maybe mempty (pure . flip SetLED True) (modeLED initialMode)
             )
-        . S.morphInner (lift . lift)
         $ S.parList
             id
             [ Keyboard.feed opts.keyboard initialMode Keyboard.Opts{..}

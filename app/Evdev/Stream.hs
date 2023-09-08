@@ -46,6 +46,7 @@ Invariant: events for a device fall between appropriate added and removed events
 readEventsMany :: (S.MonadAsync m) => SI.Stream m Device -> SI.Stream m (Device, Either (Either () IOError) Event)
 -- TODO better to only end the stream only upon "No such device" rather than _all_ IO errors?
 -- TODO use custom types to make this clearer? stream consists of `(Device, Conn | Disconn IOError | Event Event)`
+-- TODO generalise to allow a `(Device, a)` stream as input? or can this be achieved with transformers?
 readEventsMany =
     S.parConcatMap id \d ->
         fmap (d,)
