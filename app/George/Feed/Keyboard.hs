@@ -11,8 +11,6 @@ import Control.Monad.Freer
 import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.State.Strict
 import Control.Monad.Writer
-import Data.Bifunctor
-import Data.Either
 import Data.Foldable
 import Data.IORef
 import Data.Set (Set)
@@ -57,7 +55,7 @@ data Mode
 newtype TypingReason
     = TypingSpotifySearch Spotify.SearchType
 
-dispatchKeys :: (S.MonadAsync m) => Opts -> Evdev.EventData -> KeyboardState -> m (([Event], S.Stream m [Event]), KeyboardState)
+dispatchKeys :: (S.MonadAsync m) => Opts -> Evdev.EventData -> KeyboardState -> m (S.Stream m [Event], KeyboardState)
 dispatchKeys opts = wrap \case
     (KeyRightalt, e, KeyboardState{modeChangeState, keyboards, mode, previousMode}) -> case e of
         Pressed -> #modeChangeState ?= Nothing
@@ -214,14 +212,14 @@ dispatchKeys opts = wrap \case
   where
     wrap f e0 =
         -- this was originally separated to stop Fourmolu from indenting - it's now used to build a sort of DSL
-        fmap (\(((), s), es) -> (second (S.parList id) $ partitionEithers es, s)) . runWriterT . runStateT case e0 of
+        fmap (\(((), s), es) -> (S.parList id es, s)) . runWriterT . runStateT case e0 of
             KeyEvent k e -> get >>= \s -> f (k, e, s)
             _ -> pure ()
     setMod l = \case
         Pressed -> l .= True
         Released -> l .= False
         Repeated -> pure ()
-    evs = tell . map Left
+    evs = tell . pure . S.fromPure
     simpleAct = act . send
     act = evs . pure . ActionEvent mempty
     irOnce = simpleAct .: SendIR IROnce
@@ -243,9 +241,8 @@ dispatchKeys opts = wrap \case
         ref <- liftIO $ newIORef True
         #typing ?= (t, [], writeIORef ref False)
         mode <- use #mode
-        tell
-            [ Left $ LogEvent "Waiting for keyboard input"
-            , Right case opts.modeLED mode of
+        tell . pure . S.cons [LogEvent "Waiting for keyboard input"] $
+            case opts.modeLED mode of
                 Just led ->
                     S.takeWhileM (const $ liftIO $ readIORef ref) . S.concatMap id . S.repeat $
                         (S.consM pause . S.cons [setLED False] . S.consM pause . S.cons [setLED True] $ S.nil)
@@ -253,12 +250,11 @@ dispatchKeys opts = wrap \case
                     pause = liftIO (threadDelay 300_000) >> pure []
                     setLED = ActionEvent mempty . send . SetLED led
                 Nothing -> S.nil
-            ]
     speakerName = "pi"
 
 feed :: (S.MonadAsync m, MonadLog Text m) => [Text] -> Mode -> Opts -> S.Stream m [Event]
 feed keyboardNames initialMode opts =
-    (((S.parConcat id . fmap (uncurry S.cons . snd)) .) . S.runStateT . pure)
+    (((S.parConcat id . fmap snd) .) . S.runStateT . pure)
         ( KeyboardState
             { keyboards = mempty
             , mode = initialMode
@@ -280,12 +276,12 @@ feed keyboardNames initialMode opts =
                             -- TODO unify "always grabbed unless in Idle mode" logic somewhere?
                             mode <- use #mode
                             when (mode /= Idle) $ liftIO $ Evdev.grabDevice d
-                            pure ([], S.nil)
+                            pure S.nil
                         )
                         ( \e -> do
                             logMessage $ "Evdev device removed: " <> showT e
                             #keyboards %= Set.delete d
-                            pure ([], S.nil)
+                            pure S.nil
                         )
                     )
                     (StateT . dispatchKeys opts . Evdev.eventData)
