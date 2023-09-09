@@ -27,6 +27,8 @@ import Optics.State.Operators
 import Options.Generic
 import Spotify.Types.Search qualified as Spotify
 import Streamly.Data.Stream.Prelude qualified as S
+import Util.Streamly qualified as S
+import Util.Util
 import Prelude hiding (log)
 
 newtype Opts = Opts
@@ -297,7 +299,7 @@ feed keyboardNames initialMode opts =
                 . readEventsMany
             )
         -- TODO I'm a bit worried about what this might do to fusion - generalise `readEventsMany` instead?
-        . streamPartitionEithers
+        . S.partitionEithers
         . S.mapM
             ( either
                 ( \(p, e) ->

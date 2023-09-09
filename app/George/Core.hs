@@ -10,7 +10,6 @@ Events
 module George.Core where
 
 import Util
-import Util.GPIO qualified as GPIO
 import Util.Lifx
 
 import Control.Exception (IOException)
@@ -55,6 +54,8 @@ import Streamly.Data.Fold qualified as SF
 import Streamly.Data.Stream.Prelude qualified as S
 import System.Exit
 import System.Process.Extra
+import Util.GPIO qualified as GPIO
+import Util.Util
 
 data AppState = AppState
     { activeLEDs :: Map Int GPIO.Handle

@@ -8,7 +8,6 @@ import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Monad.Catch
 import Control.Monad.Freer
-import Control.Monad.State.Strict
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Either.Extra
@@ -16,24 +15,14 @@ import Data.Function
 import Data.Kind
 import Data.List.Extra
 import Data.Proxy
-import Data.Text qualified as T
-import Data.Text.Encoding hiding (Some)
-import Data.Time (NominalDiffTime, nominalDiffTimeToSeconds)
+import Data.Time (NominalDiffTime)
 import Evdev qualified
 import Evdev.Codes qualified as Evdev
 import Network.Socket
 import Options.Generic
 import RawFilePath
 import Spotify.Types.Misc qualified as Spotify
-import Streamly.Data.Stream.Prelude qualified as S
-import Streamly.Data.StreamK qualified as SK
-import Streamly.Internal.Data.Stream.StreamK qualified as SK
 import System.Exit
-
-showT :: (Show a) => a -> Text
-showT = T.pack . show
-showBS :: (Show a) => a -> ByteString
-showBS = encodeUtf8 . showT
 
 -- TODO return partial stdout/stderr in timeout case
 
@@ -127,35 +116,6 @@ instance Eq Evdev.Device where
     (==) = (==) `on` Evdev.devicePath
 instance Ord Evdev.Device where
     compare = compare `on` Evdev.devicePath
-
-threadDelay' :: NominalDiffTime -> IO ()
-threadDelay' = threadDelay . round . (* 1_000_000) . nominalDiffTimeToSeconds
-
-mwhen :: (Monoid p) => Bool -> p -> p
-mwhen b x = if b then x else mempty
-
-tailSafe :: [a] -> [a]
-tailSafe = \case
-    [] -> []
-    _ : xs -> xs
-
--- TODO is there a better way to implement this than all this faffing with `SK`?
-streamWithInit :: (Monad m) => m t -> (t -> S.Stream m a) -> S.Stream m a
-streamWithInit init_ stream = SK.toStream $ SK.unCross do
-    m <- SK.mkCross $ SK.fromStream $ S.fromEffect init_
-    SK.mkCross . SK.fromStream $ stream m
-
--- TODO is there a better way to implement this? seems like a common pattern?
-emitterToStream :: (S.MonadAsync m) => ((a -> m ()) -> m ()) -> S.Stream m a
-emitterToStream f = streamWithInit (liftIO newEmptyMVar) \m ->
-    (S.catMaybes . S.parList id)
-        [ S.fromEffect $ (\() -> Nothing) <$> f (liftIO . putMVar m)
-        , S.repeatM $ Just <$> liftIO (takeMVar m)
-        ]
-
--- TODO can this be implemented more efficiently in a single pass?
-streamPartitionEithers :: (Monad m) => S.Stream m (Either a b) -> (S.Stream m a, S.Stream m b)
-streamPartitionEithers s = (S.catLefts s, S.catRights s)
 
 -- bool indicates whether shift held
 -- TODO make this more complete and general and less anglocentric...

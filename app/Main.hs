@@ -30,6 +30,7 @@ import Streamly.Data.Stream.Prelude qualified as S
 import System.Exit
 import System.IO
 import Text.Pretty.Simple
+import Util.Util
 
 data Opts = Opts
     { gpioChip :: B.ByteString
