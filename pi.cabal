@@ -12,7 +12,6 @@ executable pi
     other-modules:
         Evdev.Stream
         George.Core
-        George.Feed.GPIO
         George.Feed.Keyboard
         George.Feed.WebServer
         Util
@@ -22,7 +21,6 @@ executable pi
         georgefst-utils,
         georgefst-utils:gpio-utils,
         georgefst-utils:streamly-utils,
-        georgefst-utils:streamly-gpio,
         georgefst-utils:streamly-okapi,
         async ^>= 2.2.4,
         binary ^>= 0.8.9,
