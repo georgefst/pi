@@ -4,7 +4,7 @@ import George.Core
 import George.Feed.Keyboard qualified as Keyboard
 import George.Feed.WebServer qualified as WebServer
 import Util
-import Util.GPIO qualified as GPIO
+import Util.GPIO.Persistent qualified as GPIO
 import Util.Lifx
 
 import Control.Monad.Except

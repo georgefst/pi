@@ -54,7 +54,7 @@ import Streamly.Data.Fold qualified as SF
 import Streamly.Data.Stream.Prelude qualified as S
 import System.Exit
 import System.Process.Extra
-import Util.GPIO qualified as GPIO
+import Util.GPIO.Persistent qualified as GPIO
 import Util.Util
 
 data AppState = AppState
