@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 {- TODO this is intended to eventually form the core of a library:
 George's
 Effective (pun!)
@@ -29,8 +31,6 @@ import Data.Maybe
 import Data.Stream.Infinite qualified as Stream
 import Data.Text qualified as T
 import Data.Time
-import Evdev (KeyEvent (..))
-import Evdev.Codes (Key (..))
 import GHC.Records (HasField)
 import Lifx.Lan (HSBK, MonadLifx)
 import Lifx.Lan qualified as Lifx
@@ -117,7 +117,6 @@ data Action a where
     Sleep :: NominalDiffTime -> Action ()
     SetLED :: Int -> Bool -> Action ()
     SetSystemLEDs :: Bool -> Action ()
-    SendKey :: Key -> KeyEvent -> Action ()
     GetCurrentLight :: Action Lifx.Device
     LightReScan :: Action ()
     NextLight :: Action ()
@@ -168,13 +167,6 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         traverse_
             (\(l, v) -> liftIO $ readProcess "sudo" ["tee", "/sys/class/leds/" <> l <> "/trigger"] (v <> "\n"))
             (if b then [("ACT", "mmc0"), ("PWR", "default-on")] else [("ACT", "none"), ("PWR", "none")])
-    SendKey k e -> do
-        -- TODO DRY this with my `net-evdev` repo
-        sock <- use #keySendSocket
-        liftIO . for_ opts.keySendIps $
-            void
-                . sendTo sock (B.pack [fromIntegral $ fromEnum k, fromIntegral $ fromEnum e])
-                . (SockAddrInet opts.keySendPort . (.unIP))
     GetCurrentLight -> fst . Stream.head <$> use #bulbs
     LightReScan ->
         maybe

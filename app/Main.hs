@@ -1,7 +1,8 @@
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 module Main (main) where
 
 import George.Core
-import George.Feed.Keyboard qualified as Keyboard
 import George.Feed.WebServer qualified as WebServer
 import Util
 import Util.GPIO.Persistent qualified as GPIO
@@ -78,14 +79,6 @@ main = do
                 SimpleError t -> liftIO $ T.putStrLn t
             setLED opts.ledErrorPin True
 
-        modeLED = \case
-            Keyboard.Idle -> Just opts.ledIdleModePin
-            Keyboard.Quiet -> Nothing
-            Keyboard.Sending -> Just opts.ledSendingModePin
-            Keyboard.Normal -> Just opts.ledNormalModePin
-            Keyboard.TV -> Just opts.ledTvModePin
-        initialMode = Keyboard.Idle
-
     initialState <- do
         httpConnectionManager <- newManager defaultManagerSettings
         keySendSocket <- socket AF_INET Datagram defaultProtocol >>= \s -> bind s (SockAddrInet defaultPort 0) >> pure s
@@ -113,20 +106,9 @@ main = do
             (Just $ fromIntegral opts.lifxPort)
         . runEventStream handleError logMessage (runAction (opts & \Opts{..} -> ActionOpts{..}))
         . S.morphInner liftIO
-        . S.append
-            -- flash all lights to show we have finished initialising
-            ( S.fromList
-                . map (pure . ActionEvent mempty . send)
-                $ concatMap
-                    (\n -> [SetLED n True, Sleep 0.2, SetLED n False])
-                    (mapMaybe modeLED enumerate <> [opts.ledErrorPin])
-                    <> [Sleep 0.5]
-                    <> maybe mempty (pure . flip SetLED True) (modeLED initialMode)
-            )
         $ S.parList
             id
-            [ Keyboard.feed opts.keyboard initialMode Keyboard.Opts{..}
-            , WebServer.feed opts.httpPort
+            [ WebServer.feed opts.httpPort
             -- TODO disabled until logging is better
             -- it's easier to see events when monitoring through a separate script
             -- , GPIO.feed (opts & \Opts{..} -> GPIO.Opts{..})
