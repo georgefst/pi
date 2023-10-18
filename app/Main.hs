@@ -41,6 +41,7 @@ data Opts = Opts
     , ledNormalModePin :: Int
     , ledTvModePin :: Int
     , lifxTimeout :: Double
+    , lifxIgnore :: [Text]
     , lifxPort :: Word16
     , httpPort :: Warp.Port
     , keyboard :: [Text]
@@ -91,11 +92,15 @@ main = do
         keySendSocket <- socket AF_INET Datagram defaultProtocol >>= \s -> bind s (SockAddrInet defaultPort 0) >> pure s
         -- TODO shift this in to the LIFX block below - currently awkward because this is needed to run the state monad
         -- otherwise, what port to use? is it a bug that library doesn't release this soon enough? `* 2` is silly
-        -- TODO log lights found
         -- TODO use existing logging and failure mechanisms when no lights found
         bulbs <-
-            maybe (T.putStrLn "No LIFX devices found" >> exitFailure) (pure . Stream.cycle)
+            maybe (T.putStrLn "No valid LIFX devices found" >> exitFailure) (pure . Stream.cycle)
                 . nonEmpty
+                =<< filterM
+                    ( \(_, Lifx.LightState{label}) ->
+                        let good = label `notElem` opts.lifxIgnore
+                         in T.putStrLn ("LIFX device " <> bool "ignored" "found" good <> ": " <> label) >> pure good
+                    )
                 =<< either (\e -> T.putStrLn ("LIFX startup error: " <> showT e) >> exitFailure) pure
                 =<< Lifx.runLifxT (lifxTime opts.lifxTimeout) (Just $ fromIntegral opts.lifxPort * 2) discoverLifx
         pure
