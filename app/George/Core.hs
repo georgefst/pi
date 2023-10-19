@@ -19,6 +19,7 @@ import Control.Monad.Except
 import Control.Monad.Freer
 import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.State.Strict
+import Data.Bool
 import Data.ByteString qualified as B
 import Data.Char (isSpace)
 import Data.Foldable
@@ -151,6 +152,7 @@ data ActionOpts = ActionOpts
     , setLED :: forall m. (MonadState AppState m, MonadLog Text m, MonadIO m) => Int -> Bool -> m ()
     , keySendPort :: PortNumber
     , keySendIps :: [IP]
+    , lifxIgnore :: [Text]
     }
 
 runAction ::
@@ -178,9 +180,14 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
     GetCurrentLight -> fst . Stream.head <$> use #bulbs
     LightReScan ->
         maybe
-            (logMessage "No LIFX devices found during re-scan - retaining old list")
-            (\ds -> #bulbs .= Stream.cycle ds >> logMessage ("LIFX devices found: " <> showT (toList ds)))
+            (logMessage "No valid LIFX devices found during re-scan - retaining old list")
+            (\ds -> #bulbs .= Stream.cycle ds)
             . nonEmpty
+            =<< filterM
+                ( \(_, Lifx.LightState{label}) ->
+                    let good = label `notElem` opts.lifxIgnore
+                     in logMessage ("LIFX device " <> bool "ignored" "found" good <> ": " <> label) >> pure good
+                )
             =<< discoverLifx
     NextLight -> #bulbs %= Stream.tail
     GetLightPower l -> statePowerToBool <$> Lifx.sendMessage l Lifx.GetPower

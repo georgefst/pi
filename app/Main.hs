@@ -92,7 +92,7 @@ main = do
         keySendSocket <- socket AF_INET Datagram defaultProtocol >>= \s -> bind s (SockAddrInet defaultPort 0) >> pure s
         -- TODO shift this in to the LIFX block below - currently awkward because this is needed to run the state monad
         -- otherwise, what port to use? is it a bug that library doesn't release this soon enough? `* 2` is silly
-        -- TODO use existing logging and failure mechanisms when no lights found
+        -- TODO use existing logging and failure mechanisms when no lights found, and DRY with `LightReScan`
         bulbs <-
             maybe (T.putStrLn "No valid LIFX devices found" >> exitFailure) (pure . Stream.cycle)
                 . nonEmpty
