@@ -103,7 +103,7 @@ dispatchKeys opts = wrap \case
     (k, e, KeyboardState{..}) -> case mode of
         Idle -> pure ()
         Quiet -> case (k, e) of
-            (KeyN, Pressed) -> night False
+            (KeySpace, Pressed) -> night False
             _ -> pure ()
         Normal -> case k of
             KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
@@ -127,7 +127,7 @@ dispatchKeys opts = wrap \case
                     KeyW | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.ShowSearch
                     KeyE | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.EpisodeSearch
                     KeyB | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.AudiobookSearch
-                    KeyN -> night True
+                    KeySpace -> night True
                     KeyP ->
                         if ctrl
                             then simpleAct ToggleHifiPlug
