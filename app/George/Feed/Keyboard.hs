@@ -60,7 +60,7 @@ newtype TypingReason
 
 dispatchKeys :: Opts -> Evdev.EventData -> KeyboardState -> IO (S.Stream IO [Event], KeyboardState)
 dispatchKeys opts = wrap \case
-    (KeyRightalt, e, KeyboardState{modeChangeState, keyboards, mode, previousMode}) -> case e of
+    (KeyRightalt, e, KeyboardState{modeChangeState, previousMode}) -> case e of
         Pressed -> #modeChangeState ?= Nothing
         _ -> case modeChangeState of
             Nothing -> err $ Error "Unexpected mode switch key event" e
@@ -68,7 +68,6 @@ dispatchKeys opts = wrap \case
                 Repeated -> pure ()
                 Released -> (either err pure <=< runExceptT) do
                     #modeChangeState .= Nothing
-                    let old = mode
                     new <- case mk of
                         Nothing -> pure previousMode
                         Just k -> case k of
@@ -79,22 +78,7 @@ dispatchKeys opts = wrap \case
                             KeyT -> pure TV
                             KeyComma -> pure Sending
                             _ -> throwError $ Error "Key does not correspond to any mode" k
-                    #mode .= new
-                    #previousMode .= old
-                    when (old == Idle) $ traverse_ (liftIO . Evdev.grabDevice) keyboards
-                    when (new == Idle) $ traverse_ (liftIO . Evdev.ungrabDevice) keyboards
-                    evs
-                        [ LogEvent $ "Changing keyboard mode: " <> showT new
-                        , ActionEvent mempty do
-                            for_ (opts.modeLED old) $ send . flip SetLED False
-                            for_ (opts.modeLED new) $ send . flip SetLED True
-                            case old of
-                                Quiet -> send $ SetSystemLEDs True
-                                _ -> pure ()
-                            case new of
-                                Quiet -> send $ SetSystemLEDs False
-                                _ -> pure ()
-                        ]
+                    lift $ switchMode new
     (k, _, KeyboardState{modeChangeState = Just _}) ->
         #modeChangeState ?= Just k
     (k, e, KeyboardState{mode = Sending}) -> simpleAct $ SendKey k e
@@ -240,6 +224,25 @@ dispatchKeys opts = wrap \case
     evs = tell . pure . S.fromPure
     err = evs . pure . ErrorEvent
     log = evs . pure . LogEvent
+    switchMode new = do
+        keyboards <- use #keyboards
+        old <- use #mode
+        #mode .= new
+        #previousMode .= old
+        when (old == Idle) $ traverse_ (liftIO . Evdev.grabDevice) keyboards
+        when (new == Idle) $ traverse_ (liftIO . Evdev.ungrabDevice) keyboards
+        evs
+            [ LogEvent $ "Changing keyboard mode: " <> showT new
+            , ActionEvent mempty do
+                for_ (opts.modeLED old) $ send . flip SetLED False
+                for_ (opts.modeLED new) $ send . flip SetLED True
+                case old of
+                    Quiet -> send $ SetSystemLEDs True
+                    _ -> pure ()
+                case new of
+                    Quiet -> send $ SetSystemLEDs False
+                    _ -> pure ()
+            ]
     simpleAct = act . send
     act = evs . pure . ActionEvent mempty
     irOnce = simpleAct .: SendIR IROnce
