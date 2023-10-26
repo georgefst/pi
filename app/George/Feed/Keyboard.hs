@@ -169,9 +169,7 @@ dispatchKeys opts = wrap \case
                             if alt
                                 then send . GetLightsInGroup =<< send GetCurrentLightGroup
                                 else pure <$> send GetCurrentLight
-                        for_ ls \l -> do
-                            p <- send $ GetLightPower l
-                            send $ SetLightPower l $ not p
+                        for_ ls \l -> send . SetLightPower l . not =<< send (GetLightPower l)
                     KeyT -> act $ send . flip SpotifyTransfer ctrl =<< send (SpotifyGetDevice speakerName)
                     _ -> pure ()
                 _ -> pure ()
@@ -185,14 +183,12 @@ dispatchKeys opts = wrap \case
                 Released -> send UnsetLightColourCache
               where
                 setColour useCache = do
-                    l <- send GetCurrentLight
-                    g <- send GetCurrentLightGroup
-                    c <- send $ GetLightColour useCache l
+                    c <- send . GetLightColour useCache =<< send GetCurrentLight
                     ls <-
                         if alt
-                            then send $ GetLightsInGroup g
+                            then send . GetLightsInGroup =<< send GetCurrentLightGroup
                             else pure <$> send GetCurrentLight
-                    traverse_ (\l' -> send . SetLightColour True l' 0 $ f c) ls
+                    for_ ls \l -> send . SetLightColour True l 0 $ f c
             incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
         TV -> case k of
             KeySpace | e == Pressed -> act do
