@@ -166,11 +166,7 @@ dispatchKeys opts = wrap \case
                     KeyR -> simpleAct LightReScan
                     KeyL -> act do
                         p <- send . GetLightPower =<< send GetCurrentLight
-                        ls <-
-                            if alt
-                                then send . GetLightsInGroup =<< send GetCurrentLightGroup
-                                else pure <$> send GetCurrentLight
-                        for_ ls \l -> send . SetLightPower l $ not p
+                        getLightOrGroup >>= traverse_ \l -> send . SetLightPower l $ not p
                     KeyT -> act $ send . flip SpotifyTransfer ctrl =<< send (SpotifyGetDevice speakerName)
                     _ -> pure ()
                 _ -> pure ()
@@ -185,12 +181,12 @@ dispatchKeys opts = wrap \case
               where
                 setColour useCache = do
                     c <- send . GetLightColour useCache =<< send GetCurrentLight
-                    ls <-
-                        if alt
-                            then send . GetLightsInGroup =<< send GetCurrentLightGroup
-                            else pure <$> send GetCurrentLight
-                    for_ ls \l -> send . SetLightColour True l 0 $ f c
+                    getLightOrGroup >>= traverse_ \l -> send . SetLightColour True l 0 $ f c
             incrementLightField f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
+            getLightOrGroup =
+                if alt
+                    then send . GetLightsInGroup =<< send GetCurrentLightGroup
+                    else pure <$> send GetCurrentLight
         TV -> case k of
             KeySpace | e == Pressed -> act do
                 send $ SendIR IROnce IRTV "KEY_AUX"
