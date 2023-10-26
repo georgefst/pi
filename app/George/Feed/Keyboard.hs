@@ -165,11 +165,12 @@ dispatchKeys opts = wrap \case
                     KeyNextsong -> simpleAct $ Mpris "Next"
                     KeyR -> simpleAct LightReScan
                     KeyL -> act do
+                        p <- send . GetLightPower =<< send GetCurrentLight
                         ls <-
                             if alt
                                 then send . GetLightsInGroup =<< send GetCurrentLightGroup
                                 else pure <$> send GetCurrentLight
-                        for_ ls \l -> send . SetLightPower l . not =<< send (GetLightPower l)
+                        for_ ls \l -> send . SetLightPower l $ not p
                     KeyT -> act $ send . flip SpotifyTransfer ctrl =<< send (SpotifyGetDevice speakerName)
                     _ -> pure ()
                 _ -> pure ()
