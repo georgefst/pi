@@ -102,7 +102,9 @@ dispatchKeys opts = wrap \case
         finishTyping = #typing .= Nothing >> liftIO finish
     (k, e, KeyboardState{..}) -> case mode of
         Idle -> pure ()
-        Quiet -> pure ()
+        Quiet -> case (k, e) of
+            (KeyN, Pressed) -> night False
+            _ -> pure ()
         Normal -> case k of
             KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
             KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
@@ -125,6 +127,7 @@ dispatchKeys opts = wrap \case
                     KeyW | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.ShowSearch
                     KeyE | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.EpisodeSearch
                     KeyB | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.AudiobookSearch
+                    KeyN -> night True
                     KeyP ->
                         if ctrl
                             then simpleAct ToggleHifiPlug
@@ -266,6 +269,12 @@ dispatchKeys opts = wrap \case
               where
                 pause = liftIO (threadDelay 300_000) >> pure []
                 setLED = ActionEvent mempty . send . SetLED led
+    night b = do
+        act $
+            traverse_ (send . flip SetLightPower (not b))
+                =<< send . GetLightsInGroup
+                =<< send GetCurrentLightGroup
+        switchMode if b then Quiet else Normal
     speakerName = "pi"
 
 feed :: [Text] -> Mode -> Opts -> S.Stream IO [Event]
