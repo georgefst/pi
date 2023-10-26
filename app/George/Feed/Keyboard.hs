@@ -122,14 +122,14 @@ dispatchKeys opts = wrap \case
         Normal -> case k of
             KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
             KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
-            KeyLeft -> modifyLight e $ #hue %~ subtract (hueInterval ctrl shift)
-            KeyRight -> modifyLight e $ #hue %~ (+ hueInterval ctrl shift)
-            KeyMinus -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedSub minBound 256
-            KeyEqual -> modifyLight e $ #saturation %~ incrementLightField ctrl shift clampedAdd maxBound 256
-            KeyDown -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedSub minBound 256
-            KeyUp -> modifyLight e $ #brightness %~ incrementLightField ctrl shift clampedAdd maxBound 256
-            KeyLeftbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedSub 1500 25
-            KeyRightbrace -> modifyLight e $ #kelvin %~ incrementLightField ctrl shift clampedAdd 9000 25
+            KeyLeft -> modifyLight alt e $ #hue %~ subtract (hueInterval ctrl shift)
+            KeyRight -> modifyLight alt e $ #hue %~ (+ hueInterval ctrl shift)
+            KeyMinus -> modifyLight alt e $ #saturation %~ incrementLightField ctrl shift clampedSub minBound 256
+            KeyEqual -> modifyLight alt e $ #saturation %~ incrementLightField ctrl shift clampedAdd maxBound 256
+            KeyDown -> modifyLight alt e $ #brightness %~ incrementLightField ctrl shift clampedSub minBound 256
+            KeyUp -> modifyLight alt e $ #brightness %~ incrementLightField ctrl shift clampedAdd maxBound 256
+            KeyLeftbrace -> modifyLight alt e $ #kelvin %~ incrementLightField ctrl shift clampedSub 1500 25
+            KeyRightbrace -> modifyLight alt e $ #kelvin %~ incrementLightField ctrl shift clampedAdd 9000 25
             _ -> case e of
                 Pressed -> case k of
                     KeyEsc | ctrl -> simpleAct Exit
@@ -165,9 +165,13 @@ dispatchKeys opts = wrap \case
                     KeyNextsong -> simpleAct $ Mpris "Next"
                     KeyR -> simpleAct LightReScan
                     KeyL -> act do
-                        l <- send GetCurrentLight
-                        p <- send $ GetLightPower l
-                        send $ SetLightPower l $ not p
+                        ls <-
+                            if alt
+                                then send . GetLightsInGroup =<< send GetCurrentLightGroup
+                                else pure <$> send GetCurrentLight
+                        for_ ls \l -> do
+                            p <- send $ GetLightPower l
+                            send $ SetLightPower l $ not p
                     KeyT -> act $ send . flip SpotifyTransfer ctrl =<< send (SpotifyGetDevice speakerName)
                     _ -> pure ()
                 _ -> pure ()
@@ -234,12 +238,19 @@ dispatchKeys opts = wrap \case
     hueInterval ctrl shift = 16 * if ctrl then 16 else if shift then 4 else 1
     clampedAdd m a b = b + min (m - b) a -- TODO better implementation? maybe in library? else, this is presumably commutative in last two args (ditto below)
     clampedSub m a b = b - min (b - m) a
-    modifyLight e f = act case e of
-        Pressed -> setColour False =<< send GetCurrentLight
-        Repeated -> setColour True =<< send GetCurrentLight
+    modifyLight alt e f = act case e of
+        Pressed -> setColour False
+        Repeated -> setColour True
         Released -> send UnsetLightColourCache
       where
-        setColour useCache l = send . SetLightColour True l 0 . f =<< send (GetLightColour useCache l)
+        setColour useCache = do
+            l <- send GetCurrentLight
+            g <- send GetCurrentLightGroup
+            c <- send $ GetLightColour useCache l
+            ls <- if alt
+                then send $ GetLightsInGroup g
+                else pure <$> send GetCurrentLight
+            traverse_ (\l' -> send . SetLightColour True l' 0 $ f c) ls
     incrementLightField ctrl shift f bound inc = if ctrl then const bound else f bound if shift then inc * 4 else inc
     startTyping t = do
         ref <- liftIO $ newIORef True

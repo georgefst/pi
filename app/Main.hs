@@ -97,7 +97,7 @@ main = do
             maybe (T.putStrLn "No valid LIFX devices found" >> exitFailure) (pure . Stream.cycle)
                 . nonEmpty
                 =<< filterM
-                    ( \(_, Lifx.LightState{label}) ->
+                    ( \(_, Lifx.LightState{label}, _) ->
                         let good = label `notElem` opts.lifxIgnore
                          in T.putStrLn ("LIFX device " <> bool "ignored" "found" good <> ": " <> label) >> pure good
                     )

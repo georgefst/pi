@@ -20,6 +20,7 @@ import Control.Monad.Freer
 import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.State.Strict
 import Data.Bool
+import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Char (isSpace)
 import Data.Foldable
@@ -30,6 +31,7 @@ import Data.Maybe
 import Data.Stream.Infinite qualified as Stream
 import Data.Text qualified as T
 import Data.Time
+import Data.Tuple.Extra (fst3, thd3)
 import Evdev (KeyEvent (..))
 import Evdev.Codes (Key (..))
 import GHC.Records (HasField)
@@ -60,7 +62,7 @@ import Util.Util
 
 data AppState = AppState
     { activeLEDs :: Map Int GPIO.Handle
-    , bulbs :: Stream.Stream (Lifx.Device, Lifx.LightState)
+    , bulbs :: Stream.Stream (Lifx.Device, Lifx.LightState, Lifx.StateGroup)
     , httpConnectionManager :: Manager
     , keySendSocket :: Socket
     , lightColourCache :: Maybe HSBK
@@ -120,6 +122,7 @@ data Action a where
     SetSystemLEDs :: Bool -> Action ()
     SendKey :: Key -> KeyEvent -> Action ()
     GetCurrentLight :: Action Lifx.Device
+    GetCurrentLightGroup :: Action ByteString
     LightReScan :: Action ()
     NextLight :: Action ()
     GetLightPower :: Lifx.Device -> Action Bool
@@ -129,6 +132,7 @@ data Action a where
     SetLightColour :: Bool -> Lifx.Device -> NominalDiffTime -> HSBK -> Action ()
     GetLightState :: Lifx.Device -> Action Lifx.LightState
     GetLightName :: Lifx.Device -> Action Text
+    GetLightsInGroup :: ByteString -> Action [Lifx.Device]
     Mpris :: Text -> Action ()
     SendIR :: IRCmdType -> IRDev -> Text -> Action ()
     ToggleHifiPlug :: Action ()
@@ -177,14 +181,15 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
             void
                 . sendTo sock (B.pack [fromIntegral $ fromEnum k, fromIntegral $ fromEnum e])
                 . (SockAddrInet opts.keySendPort . (.unIP))
-    GetCurrentLight -> fst . Stream.head <$> use #bulbs
+    GetCurrentLight -> fst3 . Stream.head <$> use #bulbs
+    GetCurrentLightGroup -> (.group) . thd3 . Stream.head <$> use #bulbs
     LightReScan ->
         maybe
             (logMessage "No valid LIFX devices found during re-scan - retaining old list")
             (\ds -> #bulbs .= Stream.cycle ds)
             . nonEmpty
             =<< filterM
-                ( \(_, Lifx.LightState{label}) ->
+                ( \(_, Lifx.LightState{label}, _) ->
                     let good = label `notElem` opts.lifxIgnore
                      in logMessage ("LIFX device " <> bool "ignored" "found" good <> ": " <> label) >> pure good
                 )
@@ -202,6 +207,9 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         Lifx.sendMessage l $ Lifx.SetColor c d
     GetLightState l -> Lifx.sendMessage l Lifx.GetColor
     GetLightName l -> (.label) <$> Lifx.sendMessage l Lifx.GetColor
+    GetLightsInGroup g -> do
+        l Stream.:> ls <- use #bulbs
+        pure $ fst3 <$> filter ((== g) . (.group) . thd3) (l : Stream.takeWhile (/= l) ls)
     Mpris cmd -> do
         service <-
             maybe
