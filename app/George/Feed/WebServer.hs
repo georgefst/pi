@@ -3,8 +3,9 @@ module George.Feed.WebServer (feed) where
 import George.Core
 
 import Control.Concurrent
-import Control.Monad.Except
+import Control.Monad
 import Control.Monad.Freer
+import Control.Monad.IO.Class
 import Data.Functor
 import Network.HTTP.Types
 import Network.Wai.Handler.Warp qualified as Warp

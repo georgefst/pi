@@ -7,7 +7,7 @@ import Util
 import Util.GPIO.Persistent qualified as GPIO
 import Util.Lifx
 
-import Control.Monad.Except
+import Control.Monad
 import Control.Monad.Freer
 import Control.Monad.Log (MonadLog, logMessage, runLoggingT)
 import Control.Monad.State.Strict

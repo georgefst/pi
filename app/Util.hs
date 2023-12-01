@@ -79,9 +79,6 @@ catchMany' ::
     m a
 catchMany' ps h = flip catches . fmap (withExists \(_ :: Proxy e) -> Handler @_ @_ @e h) $ ps
 
-(.:) :: (c -> c') -> (a -> b -> c) -> a -> b -> c'
-(.:) = (.) . (.)
-
 newtype IP = IP {unIP :: HostAddress}
     deriving stock (Generic)
     deriving anyclass (ParseRecord, ParseField, ParseFields)
