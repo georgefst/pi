@@ -1,3 +1,4 @@
+{- HLINT ignore "Use <=<" -}
 module Main (main) where
 
 import George.Core
@@ -112,8 +113,8 @@ main = do
 
     flip evalStateT initialState
         . flip runLoggingT (liftIO . T.putStrLn)
-        . runLifxUntilSuccess
-            (either (handleError . Error @() "Misc exception") (handleError . Error "LIFX error"))
+        . (>>= either (handleError . Error "LIFX error") pure)
+        . Lifx.runLifxT
             (lifxTime opts.lifxTimeout)
             (Just $ fromIntegral opts.lifxPort)
         . runEventStream handleError logMessage (runAction (opts & \Opts{..} -> ActionOpts{..}))
