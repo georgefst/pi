@@ -80,12 +80,12 @@ runEventStream ::
     (forall a. Action a -> ExceptT Error m a) ->
     S.Stream IO [Event] ->
     m ()
-runEventStream handleError log' run' =
+runEventStream handleError' log' run' =
     S.fold
         ( SF.drainMapM \case
-            ErrorEvent e -> handleError e
+            ErrorEvent e -> handleError' e
             LogEvent t -> log' t
-            ActionEvent f action -> (either handleError pure <=< runExceptT) $ runM do
+            ActionEvent f action -> (either handleError' pure <=< runExceptT) $ runM do
                 r <-
                     action & translate \a -> do
                         lift . log' $ showT a
