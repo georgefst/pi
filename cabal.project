@@ -39,7 +39,22 @@ source-repository-package
 allow-newer:
     -- https://github.com/lexi-lambda/freer-simple/pull/44
     freer-simple:template-haskell,
-    okapi:*,
     evdev-streamly:streamly,
     streamly-fsnotify:streamly,
     servant-lucid:servant,
+    -- we may not need strictly all of these, but we do need most, and it's hard to keep track
+    okapi:aeson,
+    okapi:base,
+    okapi:bytestring,
+    okapi:containers,
+    okapi:http-api-data,
+    okapi:http-types,
+    okapi:mmorph,
+    okapi:mtl,
+    okapi:stm,
+    okapi:text,
+    okapi:transformers,
+    okapi:wai,
+    okapi:wai-extra,
+    okapi:warp,
+    okapi:warp-tls,
