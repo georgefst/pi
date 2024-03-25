@@ -63,8 +63,6 @@ import Util.Util
 data AppState = AppState
     { activeLEDs :: Map Int GPIO.Handle
     , bulbs :: Stream.Stream (Lifx.Device, Lifx.LightState, Lifx.StateGroup)
-    , httpConnectionManager :: Manager
-    , keySendSocket :: Socket
     , lightColourCache :: Maybe HSBK
     }
     deriving (Generic)
@@ -175,12 +173,7 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
             (\(l, v) -> liftIO $ readProcess "sudo" ["tee", "/sys/class/leds/" <> l <> "/trigger"] (v <> "\n"))
             (if b then [("ACT", "mmc0"), ("PWR", "default-on")] else [("ACT", "none"), ("PWR", "none")])
     SendKey k e -> do
-        -- TODO DRY this with my `net-evdev` repo
-        sock <- use #keySendSocket
-        liftIO . for_ opts.keySendIps $
-            void
-                . sendTo sock (B.pack [fromIntegral $ fromEnum k, fromIntegral $ fromEnum e])
-                . (SockAddrInet opts.keySendPort . (.unIP))
+        pure ()
     GetCurrentLight -> fst3 . Stream.head <$> use #bulbs
     GetCurrentLightGroup -> (.group) . thd3 . Stream.head <$> use #bulbs
     LightReScan ->
@@ -246,9 +239,7 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                 )
                 ""
     ToggleHifiPlug -> do
-        man <- use #httpConnectionManager
-        response <- liftIO $ flip httpLbs man =<< parseRequest "http://192.168.1.116/rpc/Switch.Toggle?id=0"
-        logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
+        pure ()
     SpotifyGetDevice t -> do
         ds <- liftIO Spotify.getAvailableDevices
         maybe (throwError $ Error "Spotify device not found" (t, ds)) (pure . (.id)) $ find ((== t) . (.name)) ds
