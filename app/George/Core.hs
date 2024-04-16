@@ -59,6 +59,7 @@ import System.Exit
 import System.Process.Extra
 import Util.GPIO.Persistent qualified as GPIO
 import Util.Util
+import Data.Text.Encoding (encodeUtf8)
 
 data AppState = AppState
     { activeLEDs :: Map Int GPIO.Handle
@@ -157,6 +158,7 @@ data ActionOpts = ActionOpts
     , keySendPort :: PortNumber
     , keySendIps :: [IP]
     , lifxIgnore :: [Text]
+    , hifiPlugIp :: IP
     }
 
 runAction ::
@@ -247,7 +249,7 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                 ""
     ToggleHifiPlug -> do
         man <- use #httpConnectionManager
-        let host = "192.168.178.28"
+        let host = encodeUtf8 $ T.pack $ show $ hostAddressToTuple opts.hifiPlugIp.unIP
         response <- liftIO $ httpLbs defaultRequest{host, path = "/rpc/Switch.Toggle", queryString = "?id=0"} man
         logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
     SpotifyGetDevice t -> do

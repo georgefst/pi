@@ -48,6 +48,7 @@ data Opts = Opts
     , keyboard :: [Text]
     , keySendPort :: PortNumber
     , keySendIps :: [IP]
+    , hifiPlugIp :: IP
     }
     deriving (Show, Generic)
 instance ParseRecord Opts where
