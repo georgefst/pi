@@ -249,7 +249,7 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                 ""
     ToggleHifiPlug -> do
         man <- use #httpConnectionManager
-        let host = encodeUtf8 $ T.pack $ show $ hostAddressToTuple opts.hifiPlugIp.unIP
+        let host = encodeUtf8 $ showT opts.hifiPlugIp
         response <- liftIO $ httpLbs defaultRequest{host, path = "/rpc/Switch.Toggle", queryString = "?id=0"} man
         logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
     SpotifyGetDevice t -> do
