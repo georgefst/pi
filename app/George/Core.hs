@@ -30,6 +30,7 @@ import Data.Map (Map)
 import Data.Maybe
 import Data.Stream.Infinite qualified as Stream
 import Data.Text qualified as T
+import Data.Text.Encoding (encodeUtf8)
 import Data.Time
 import Data.Tuple.Extra (fst3, thd3)
 import Evdev (KeyEvent (..))
@@ -59,7 +60,6 @@ import System.Exit
 import System.Process.Extra
 import Util.GPIO.Persistent qualified as GPIO
 import Util.Util
-import Data.Text.Encoding (encodeUtf8)
 
 data AppState = AppState
     { activeLEDs :: Map Int GPIO.Handle
