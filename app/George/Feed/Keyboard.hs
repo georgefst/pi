@@ -132,9 +132,9 @@ dispatchKeys opts = wrap \case
                         if ctrl
                             then simpleAct ToggleHifiPlug
                             else act do
-                                send $ SendIR IROnce IRHifi "KEY_POWER"
+                                send $ SendIR IRHifi "KEY_POWER"
                                 send $ Sleep 1
-                                send $ SendIR IROnce IRHifi "KEY_TAPE"
+                                send $ SendIR IRHifi "KEY_TAPE"
                     KeyS -> act do
                         send NextLight
                         l <- send GetCurrentLight
@@ -146,7 +146,7 @@ dispatchKeys opts = wrap \case
                         when wasOff $ send $ SetLightPower l False
                       where
                         flashTime = 0.35
-                    KeyMute -> irOnce IRHifi "muting"
+                    KeyMute -> irOnce IRHifi "KEY_MUTING"
                     KeyPlaypause -> simpleAct $ Mpris "PlayPause"
                     KeyPrevioussong -> simpleAct $ Mpris "Previous"
                     KeyNextsong -> simpleAct $ Mpris "Next"
@@ -176,11 +176,11 @@ dispatchKeys opts = wrap \case
                     else pure <$> send GetCurrentLight
         TV -> case k of
             KeySpace | e == Pressed -> act do
-                send $ SendIR IROnce IRTV "KEY_AUX"
+                send $ SendIR IRTV "KEY_AUX"
                 send $ Sleep t
-                send $ SendIR IROnce IRTV "KEY_AUX"
+                send $ SendIR IRTV "KEY_AUX"
                 send $ Sleep t
-                send $ SendIR IROnce IRTV "KEY_OK"
+                send $ SendIR IRTV "KEY_OK"
               where
                 t = if ctrl then 1 else 0.35
             KeyP -> irHold e IRTV "KEY_POWER"
@@ -248,11 +248,11 @@ dispatchKeys opts = wrap \case
             ]
     simpleAct = act . send
     act = evs . pure . ActionEvent mempty
-    irOnce = simpleAct .: SendIR IROnce
+    irOnce = simpleAct .: SendIR
     irHold = \case
-        Pressed -> simpleAct .: SendIR IRStart
-        Repeated -> const $ const $ pure ()
-        Released -> simpleAct .: SendIR IRStop
+        Pressed -> simpleAct .: SendIR
+        Repeated -> simpleAct .: SendIR
+        Released -> const $ const $ pure ()
     startTyping t = do
         ref <- liftIO $ newIORef True
         #typing ?= (t, [], writeIORef ref False)

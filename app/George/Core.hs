@@ -135,7 +135,7 @@ data Action a where
     GetLightName :: Lifx.Device -> Action Text
     GetLightsInGroup :: ByteString -> Action [Lifx.Device]
     Mpris :: Text -> Action ()
-    SendIR :: IRCmdType -> IRDev -> Text -> Action ()
+    SendIR :: IRDev -> Text -> Action ()
     ToggleHifiPlug :: Action ()
     SpotifyGetDevice :: Text -> Action Spotify.DeviceID
     SpotifyTransfer :: Spotify.DeviceID -> Bool -> Action ()
@@ -145,11 +145,6 @@ data IRDev
     = IRHifi
     | IRTV -- TODO move to separate module to avoid need for prefixes?
     | IRSwitcher
-    deriving (Show)
-data IRCmdType
-    = IRStart
-    | IRStop
-    | IROnce
     deriving (Show)
 
 data ActionOpts = ActionOpts
@@ -229,20 +224,18 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                 , "org.mpris.MediaPlayer2.Player." <> T.unpack cmd
                 ]
                 ""
-    SendIR type_ dev cmd ->
+    SendIR dev cmd ->
         liftIO . void $
             readProcess
-                "irsend"
+                "ir-ctl"
                 ( map
                     T.unpack
-                    [ case type_ of
-                        IRStart -> "SEND_START"
-                        IRStop -> "SEND_STOP"
-                        IROnce -> "SEND_ONCE"
-                    , case dev of
-                        IRHifi -> "rak-ch215wh"
-                        IRTV -> "LG-AKB74475403"
-                        IRSwitcher -> "PROZOR-B073TXX3KV"
+                    [ "-k"
+                    , (<> ".toml") case dev of
+                        IRHifi -> "stereo"
+                        IRTV -> "tv"
+                        IRSwitcher -> "switcher"
+                    , "-K"
                     , cmd
                     ]
                 )
