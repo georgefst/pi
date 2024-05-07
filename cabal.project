@@ -31,6 +31,13 @@ source-repository-package
     location: https://github.com/georgefst/spotify
     tag: dec21accb7466bd20ede861c38a0ae3153e3e4ba
 
+-- https://github.com/georgefst/wai/tree/warp-collapse-ghc-version-macro
+source-repository-package
+    type: git
+    location: https://github.com/georgefst/wai
+    tag: 1f2c9471b16f1e51095b014665d0fa7cf561251c
+    subdir: warp
+
 source-repository-package
     type: git
     location: https://github.com/georgefst/georgefst-utils

@@ -57,7 +57,7 @@ executable pi
         time ^>= 1.12,
         transformers ^>= 0.6,
         wai ^>= 3.2,
-        warp ^>= 3.3.28,
+        warp ^>= {3.3.28, 3.4},
     default-language: GHC2021
     default-extensions:
         BlockArguments
