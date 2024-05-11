@@ -128,10 +128,16 @@ dispatchKeys opts = wrap \case
                     KeyE | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.EpisodeSearch
                     KeyB | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.AudiobookSearch
                     KeySpace -> night True
-                    KeyP ->
-                        if ctrl
-                            then simpleAct ToggleHifiPlug
-                            else act do
+                    KeyP -> act do
+                        wasOn <- send GetHifiPlugPower
+                        if wasOn
+                            then do
+                                send $ SendIR IRHifi "KEY_POWER"
+                                send $ Sleep 3
+                                send $ SetHifiPlugPower False
+                            else do
+                                send $ SetHifiPlugPower True
+                                send $ Sleep 1
                                 send $ SendIR IRHifi "KEY_POWER"
                                 send $ Sleep 1
                                 send $ SendIR IRHifi "KEY_TAPE"

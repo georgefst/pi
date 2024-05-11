@@ -22,6 +22,7 @@ executable pi
         georgefst-utils:gpio-utils,
         georgefst-utils:streamly-utils,
         georgefst-utils:streamly-okapi,
+        aeson-optics ^>= 1.2.1,
         async ^>= 2.2.4,
         binary ^>= 0.8.9,
         bytestring ^>= 0.11,

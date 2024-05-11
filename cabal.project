@@ -65,3 +65,12 @@ allow-newer:
     okapi:wai-extra,
     okapi:warp,
     okapi:warp-tls,
+    -- TODO this is annoying/silly on a number of levels:
+    -- all we actually need is `entropy:setup.Cabal`, but that's a syntax error, which seems like a Cabal bug
+    -- entropy is already a fork due to custom setup, though it only actually needs to be for cross-compilation
+    -- we need this for HLS (or `cabal repl --enable-multi-repl`)
+    -- but for some reason, only when we have conditionals on architecture in this file
+    -- which I do have locally on one machine
+    -- (because of needing to pin zlib for cross-compilation due to toolchain breakage, as well as, separately,
+    -- https://github.com/yesodweb/wai/issues/982)
+    entropy:*,

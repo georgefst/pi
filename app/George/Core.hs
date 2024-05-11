@@ -19,10 +19,12 @@ import Control.Monad.Except
 import Control.Monad.Freer
 import Control.Monad.Log (MonadLog, logMessage)
 import Control.Monad.State.Strict
+import Data.Aeson.Optics
 import Data.Bool
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
-import Data.Char (isSpace)
+import Data.ByteString.Char8 qualified as B8
+import Data.Char (isSpace, toLower)
 import Data.Foldable
 import Data.List
 import Data.List.NonEmpty (nonEmpty)
@@ -136,6 +138,8 @@ data Action a where
     GetLightsInGroup :: ByteString -> Action [Lifx.Device]
     Mpris :: Text -> Action ()
     SendIR :: IRDev -> Text -> Action ()
+    GetHifiPlugPower :: Action Bool
+    SetHifiPlugPower :: Bool -> Action ()
     ToggleHifiPlug :: Action ()
     SpotifyGetDevice :: Text -> Action Spotify.DeviceID
     SpotifyTransfer :: Spotify.DeviceID -> Bool -> Action ()
@@ -240,11 +244,11 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                     ]
                 )
                 ""
-    ToggleHifiPlug -> do
-        man <- use #httpConnectionManager
-        let host = encodeUtf8 $ showT opts.hifiPlugIp
-        response <- liftIO $ httpLbs defaultRequest{host, path = "/rpc/Switch.Toggle", queryString = "?id=0"} man
-        logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
+    GetHifiPlugPower -> do
+        response <- messageHifiPlug "Switch.GetStatus" ""
+        maybe (throwError $ Error "Key \"output\" not found in HiFi plug response" response) pure $ responseBody response ^? key "output" % _Bool
+    SetHifiPlugPower b -> void $ messageHifiPlug "Switch.Set" $ "&on=" <> B8.pack (map toLower $ show b)
+    ToggleHifiPlug -> void $ messageHifiPlug "Switch.Toggle" ""
     SpotifyGetDevice t -> do
         ds <- liftIO Spotify.getAvailableDevices
         maybe (throwError $ Error "Spotify device not found" (t, ds)) (pure . (.id)) $ find ((== t) . (.name)) ds
@@ -277,3 +281,13 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
             liftIO
                 . Spotify.startPlayback (Just device) -- ID for this    device
                 $ Spotify.StartPlaybackOpts context item Nothing
+  where
+    -- TODO factor out a module as a prototype library
+    -- create a function for each endpoint, with appropriate arguments and response handling
+    messageHifiPlug endpoint args = do
+        man <- use #httpConnectionManager
+        let host = encodeUtf8 $ showT opts.hifiPlugIp
+        response <- liftIO $ httpLbs defaultRequest{host, path = "/rpc/" <> endpoint, queryString = "?id=0" <> args} man
+        logMessage $ "HTTP response status code from HiFi plug: " <> showT (statusCode $ responseStatus response)
+        -- TODO something to do with MonoLocalBinds, but I'm not sure _exactly_ why this type app is necessary
+        pure @m response
