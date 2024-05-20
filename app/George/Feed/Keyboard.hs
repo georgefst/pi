@@ -118,6 +118,8 @@ dispatchKeys opts = wrap \case
             KeyRightbrace -> modifyLight $ #kelvin %~ incrementLightField clampedAdd 9000 25
             _ -> case e of
                 Pressed -> case k of
+                    KeyEsc | ctrl, shift, alt -> simpleAct PowerOff
+                    KeyEsc | ctrl, shift -> simpleAct Reboot
                     KeyEsc | ctrl -> simpleAct Exit
                     KeyR | ctrl -> simpleAct ResetError
                     KeyL | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.AlbumSearch

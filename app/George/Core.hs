@@ -121,6 +121,8 @@ data Action a where
     Exit :: Action ()
     ResetError :: Action ()
     Sleep :: NominalDiffTime -> Action ()
+    PowerOff :: Action ()
+    Reboot :: Action ()
     SetLED :: Int -> Bool -> Action ()
     SetSystemLEDs :: Bool -> Action ()
     SendKey :: Key -> KeyEvent -> Action ()
@@ -170,6 +172,8 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
     Exit -> liftIO exitSuccess
     ResetError -> setLED opts.ledErrorPin False
     Sleep t -> liftIO $ threadDelay' t
+    PowerOff -> liftIO $ callProcess "sudo" ["poweroff"]
+    Reboot -> liftIO $ callProcess "sudo" ["reboot"]
     SetLED n b -> setLED n b
     SetSystemLEDs b ->
         traverse_
