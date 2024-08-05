@@ -286,7 +286,7 @@ dispatchKeys opts = wrap \case
         switchMode if b then Quiet else Normal
     speakerName = "pi"
     -- TODO search for `label = "Living Room"` instead? actually not easily done
-    livingRoomLightGroup = BS.pack [99, 205, 137, 128, 223, 49, 198, 213, 246, 172, 13, 223, 18, 91, 85, 123]
+    livingRoomLightGroup = BS.pack [0x63, 0xCD, 0x89, 0x80, 0xDF, 0x31, 0xC6, 0xD5, 0xF6, 0xAC, 0xD, 0xDF, 0x12, 0x5B, 0x55, 0x7B]
 
 feed :: [Text] -> Mode -> Opts -> S.Stream IO [Event]
 feed keyboardNames initialMode opts =
