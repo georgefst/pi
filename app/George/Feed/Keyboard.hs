@@ -259,8 +259,8 @@ dispatchKeys opts = wrap \case
     act = evs . pure . ActionEvent mempty
     irOnce = simpleAct .: SendIR
     irHold = \case
-        Pressed -> simpleAct .: SendIR
-        Repeated -> simpleAct .: SendIR
+        Pressed -> irOnce
+        Repeated -> irOnce
         Released -> const $ const $ pure ()
     startTyping t = do
         ref <- liftIO $ newIORef True
