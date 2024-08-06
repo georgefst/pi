@@ -151,6 +151,7 @@ data IRDev
     = IRHifi
     | IRTV -- TODO move to separate module to avoid need for prefixes?
     | IRSwitcher
+    | IRFan
     deriving (Show)
 
 data ActionOpts = ActionOpts
@@ -243,6 +244,7 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                         IRHifi -> "stereo"
                         IRTV -> "tv"
                         IRSwitcher -> "switcher"
+                        IRFan -> "fan"
                     , "-K"
                     , cmd
                     ]

@@ -129,6 +129,11 @@ dispatchKeys opts = wrap \case
                     KeyW | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.ShowSearch
                     KeyE | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.EpisodeSearch
                     KeyB | ctrl, shift -> startTyping $ TypingSpotifySearch Spotify.AudiobookSearch
+                    KeyM | alt -> irOnce IRFan "mode"
+                    KeyT | alt -> irOnce IRFan "timer"
+                    KeyR | alt -> irOnce IRFan "rotate"
+                    KeyL | alt -> irOnce IRFan "level"
+                    KeyP | alt -> irOnce IRFan "power"
                     KeySpace -> night True
                     KeyP -> act do
                         wasOn <- send GetHifiPlugPower
