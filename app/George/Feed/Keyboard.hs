@@ -11,7 +11,6 @@ import Control.Monad.Freer
 import Control.Monad.State.Strict
 import Control.Monad.Writer
 import Data.Bifunctor
-import Data.ByteString qualified as BS
 import Data.Foldable
 import Data.IORef
 import Data.Set (Set)
@@ -286,7 +285,7 @@ dispatchKeys opts = wrap \case
         switchMode if b then Quiet else Normal
     speakerName = "pi"
     -- TODO search for `label = "Living Room"` instead? actually not easily done
-    livingRoomLightGroup = BS.pack [0x63, 0xCD, 0x89, 0x80, 0xDF, 0x31, 0xC6, 0xD5, 0xF6, 0xAC, 0xD, 0xDF, 0x12, 0x5B, 0x55, 0x7B]
+    livingRoomLightGroup = "\x63\xCD\x89\x80\xDF\x31\xC6\xD5\xF6\xAC\xD\xDF\x12\x5B\x55\x7B"
 
 feed :: [Text] -> Mode -> Opts -> S.Stream IO [Event]
 feed keyboardNames initialMode opts =
