@@ -45,6 +45,7 @@ data KeyboardState = KeyboardState
     , alt :: Bool
     , modeChangeState :: Maybe (Maybe Key)
     , typing :: Maybe (TypingReason, [Char], IO ())
+    , irHoldCounter :: Int
     }
     deriving (Generic)
 data Mode
@@ -265,8 +266,15 @@ dispatchKeys opts = wrap \case
     irOnce = simpleAct .: SendIR
     irHold = \case
         Pressed -> irOnce
-        Repeated -> irOnce
-        Released -> const $ const $ pure ()
+        Repeated -> \dev cmd -> do
+            old <- use #irHoldCounter
+            let new = old + 1
+            #irHoldCounter .= new
+            when (new `mod` interval == 0) $ irOnce dev cmd
+          where
+            -- TODO make configurable? would ideally be on a per-device basis...
+            interval = 6
+        Released -> const $ const $ #irHoldCounter .= 0
     startTyping t = do
         ref <- liftIO $ newIORef True
         #typing ?= (t, [], writeIORef ref False)
@@ -304,6 +312,7 @@ feed keyboardNames initialMode opts =
             , alt = False
             , modeChangeState = Nothing
             , typing = Nothing
+            , irHoldCounter = 0
             }
         )
         . uncurry S.cons
