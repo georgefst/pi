@@ -49,6 +49,9 @@ allow-newer:
     evdev-streamly:streamly,
     streamly-fsnotify:streamly,
     servant-lucid:servant,
+    -- my own libraries - I should just bump the bounds there
+    lifx-lan:base,
+    spotify:aeson,
     -- we may not need strictly all of these, but we do need most, and it's hard to keep track
     okapi:aeson,
     okapi:base,
