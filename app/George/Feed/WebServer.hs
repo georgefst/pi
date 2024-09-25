@@ -5,11 +5,12 @@ import George.Core
 import Control.Concurrent
 import Control.Monad
 import Control.Monad.Freer
-import Control.Monad.IO.Class
 import Data.Functor
+import Data.Text (Text)
 import Network.HTTP.Types
 import Network.Wai.Handler.Warp qualified as Warp
-import Okapi hiding (Event)
+import Okapi.App
+import Okapi.Response
 import Streamly.Data.Stream.Prelude qualified as S
 import Util.Streamly.Okapi qualified as Okapi
 import Util.Util
@@ -21,13 +22,11 @@ feed port =
         Okapi.stream
             Okapi.Opts
                 { warpSettings = Warp.setPort port Warp.defaultSettings
-                , routes =
-                    [ withGetRoute "tmp" $ f showT $ send ResetError
-                    , withGetRoute "light" $ f id $ send . GetLightName =<< send GetCurrentLight
-                    , withGetRoute "spotify" do
-                        seg "transfer"
-                        deviceName <- segParam
-                        f showT $ send . flip SpotifyTransfer True =<< send (SpotifyGetDevice deviceName)
+                , routes = \act ->
+                    [ lit "tmp" . simpleGet $ f showT act $ send ResetError
+                    , lit "light" . simpleGet $ f id act $ send . GetLightName =<< send GetCurrentLight
+                    , lit "spotify" . lit "transfer" . param . simpleGet $
+                        f showT act . (send . flip SpotifyTransfer True <=< send . SpotifyGetDevice)
                     ]
                 }
             <&> \case
@@ -35,10 +34,8 @@ feed port =
                 Okapi.WarpLog r s i ->
                     guard (not $ statusIsSuccessful s) $> [ErrorEvent (Error "HTTP error" (r, s, i))]
   where
-    f show' a = do
-        m <- liftIO newEmptyMVar
-        pure
-            ( ActionEvent (putMVar m) a
-            , okPlainText [] . (<> "\n") . show' =<< liftIO (takeMVar m)
-            )
-    withGetRoute s x = Okapi.get >> seg s >> x
+    f show' (act :: Event -> IO ()) a ok _req = do
+        m <- newEmptyMVar
+        act $ ActionEvent (putMVar m) a
+        ok noHeaders . (<> "\n") . show' <$> takeMVar m
+    simpleGet = responder @200 @'[] @Text @Text . method GET id

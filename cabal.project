@@ -5,6 +5,7 @@ source-repository-package
     type: git
     location: https://github.com/georgefst/lifx-lan
     tag: 4795c0d940f7ed5b9df66a8c97b72fd91f3b2f97
+allow-newer: lifx-lan:*
 
 -- https://github.com/cdepillabout/pretty-simple/pull/107
 source-repository-package
@@ -17,63 +18,74 @@ source-repository-package
     type: git
     location: https://github.com/georgefst/entropy
     tag: 7c7bd1d24b90d31b38e8b3f8f4b1a8d7ceae792b
-
--- custom setup removed, no release yet
-source-repository-package
-    type: git
-    location: https://github.com/kazu-yamamoto/logger
-    subdir: wai-logger
-    tag: cc1ec1d8e6700b66b1b1c037694e962311d165b8
+-- TODO this is annoying/silly on a number of levels:
+-- all we actually need is `entropy:setup.Cabal`, but that's a syntax error, which seems like a Cabal bug
+-- entropy is already a fork due to custom setup, though it only actually needs to be for cross-compilation
+-- we need this for HLS (or `cabal repl --enable-multi-repl`)
+-- but for some reason, only when we have conditionals on architecture in this file
+-- which I do have locally on one machine
+-- (because of needing to pin zlib for cross-compilation due to toolchain breakage, as well as, separately,
+-- https://github.com/yesodweb/wai/issues/982)
+allow-newer: entropy:*
 
 -- not yet on Hackage
 source-repository-package
     type: git
     location: https://github.com/georgefst/spotify
     tag: dec21accb7466bd20ede861c38a0ae3153e3e4ba
+allow-newer: spotify:*
 
--- https://github.com/georgefst/wai/tree/warp-collapse-ghc-version-macro
-source-repository-package
-    type: git
-    location: https://github.com/georgefst/wai
-    tag: 1f2c9471b16f1e51095b014665d0fa7cf561251c
-    subdir: warp
-
+-- using `okapi-prerelease` branch due to depending on non-Hackage version of Okapi (see below)
 source-repository-package
     type: git
     location: https://github.com/georgefst/georgefst-utils
-    tag: 895fc41e2b3f6f214d77f8cbd3cf37fe5855d4ee
+    tag: fa8e20cab48b2e111070a22e76ab1baa6a33422d
 
-allow-newer:
-    -- https://github.com/lexi-lambda/freer-simple/pull/44
-    freer-simple:template-haskell,
-    evdev-streamly:streamly,
-    streamly-fsnotify:streamly,
-    servant-lucid:servant,
-    -- my own libraries - I should just bump the bounds there
-    lifx-lan:base,
-    spotify:aeson,
-    -- we may not need strictly all of these, but we do need most, and it's hard to keep track
-    okapi:aeson,
-    okapi:base,
-    okapi:bytestring,
-    okapi:containers,
-    okapi:http-api-data,
-    okapi:http-types,
-    okapi:mmorph,
-    okapi:mtl,
-    okapi:stm,
-    okapi:text,
-    okapi:transformers,
-    okapi:wai,
-    okapi:wai-extra,
-    okapi:warp,
-    okapi:warp-tls,
-    -- TODO this is annoying/silly on a number of levels:
-    -- all we actually need is `entropy:setup.Cabal`, but that's a syntax error, which seems like a Cabal bug
-    -- entropy is already a fork due to custom setup, though it only actually needs to be for cross-compilation
-    -- we need this for HLS (or `cabal repl --enable-multi-repl`)
-    -- but for some reason, only when we have conditionals on architecture in this file
-    -- which I do have locally on one machine
-    -- (because of needing to pin zlib for cross-compilation due to toolchain breakage, as well as, separately,
-    -- https://github.com/yesodweb/wai/issues/982)
-    entropy:*,
+-- using unreleased API - https://github.com/monadicsystems/okapi/issues/30
+source-repository-package
+    type: git
+    location: https://github.com/monadicsystems/okapi
+    tag: d502f56eddff53d960ffe9cf687fa6f86397ab93
+    subdir: lib
+
+if impl(ghc >= 9.8)
+    allow-newer:
+        -- https://github.com/lexi-lambda/freer-simple/pull/44
+        freer-simple:template-haskell,
+        -- we may not need strictly all of these, but we do need most, and it's hard to keep track
+        okapi:aeson,
+        okapi:base,
+        okapi:base64,
+        okapi:bytestring,
+        okapi:containers,
+        okapi:http-api-data,
+        okapi:http-types,
+        okapi:mmorph,
+        okapi:mtl,
+        okapi:stm,
+        okapi:text,
+        okapi:transformers,
+        okapi:wai,
+        okapi:wai-extra,
+        okapi:warp,
+        okapi:warp-tls,
+
+if impl(ghc >= 9.10)
+    -- 9.10 supported but unreleased:
+    -- https://github.com/composewell/streamly/pull/2749
+    -- https://github.com/composewell/streamly/issues/2748
+    source-repository-package
+        type: git
+        location: https://github.com/composewell/streamly
+        tag: 9539dcca361bb05eaa04cfe5be99ce38d8a1f98f
+        subdir: . core
+    -- https://github.com/lexi-lambda/freer-simple/pull/45
+    source-repository-package
+        type: git
+        location: https://github.com/georgefst/freer-simple
+        tag: 365bf9294477783b29186cdf48dc608e060a6ec9
+    allow-newer:
+        -- https://github.com/phadej/aeson-optics/issues/20
+        aeson-optics:base,
+        -- deprecated library - can be removed once `evdev` stops depending on it
+        filepath-bytestring:base,
