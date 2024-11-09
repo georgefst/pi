@@ -142,17 +142,7 @@ dispatchKeys opts = wrap \case
                     KeySpace -> night True
                     KeyP -> act do
                         wasOn <- send GetHifiPlugPower
-                        if wasOn
-                            then do
-                                send $ SendIR IRHifi "KEY_POWER"
-                                send $ Sleep 3
-                                send $ SetHifiPlugPower False
-                            else do
-                                send $ SetHifiPlugPower True
-                                send $ Sleep 1
-                                send $ SendIR IRHifi "KEY_POWER"
-                                send $ Sleep 1
-                                send $ SendIR IRHifi "KEY_TAPE"
+                        if wasOn then hifiOn else hifiOff
                     KeyS -> act do
                         send NextLight
                         l <- send GetCurrentLight
@@ -179,7 +169,7 @@ dispatchKeys opts = wrap \case
                         send $ SetLightPower l True
                         send $ SetLightColour False l 0 $ rgbToHsbk $ toSRGB Colour.red
                         p <- send GetHifiPlugPower
-                        when (not p) $ send $ SetHifiPlugPower True
+                        when (not p) hifiOff
                         send . SpotifySearchAndPlay Spotify.TrackSearch "La Femme L'hawaïenne"
                             =<< send (SpotifyGetDevice speakerName)
                     _ -> pure ()
@@ -201,6 +191,16 @@ dispatchKeys opts = wrap \case
                 if alt
                     then send . GetLightsInGroup =<< send GetCurrentLightGroup
                     else pure <$> send GetCurrentLight
+            hifiOn = do
+                send $ SendIR IRHifi "KEY_POWER"
+                send $ Sleep 3
+                send $ SetHifiPlugPower False
+            hifiOff = do
+                send $ SetHifiPlugPower True
+                send $ Sleep 1
+                send $ SendIR IRHifi "KEY_POWER"
+                send $ Sleep 1
+                send $ SendIR IRHifi "KEY_TAPE"
         TV -> case k of
             KeySpace | e == Pressed -> act do
                 send $ SendIR IRTV "KEY_AUX"
