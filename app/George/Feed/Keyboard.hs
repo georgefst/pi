@@ -11,6 +11,7 @@ import Control.Monad.Freer
 import Control.Monad.State.Strict
 import Control.Monad.Writer
 import Data.Bifunctor
+import Data.ByteString (ByteString)
 import Data.Colour.Names qualified as Colour
 import Data.Colour.SRGB (toSRGB)
 import Data.Foldable
@@ -308,9 +309,9 @@ dispatchKeys opts = wrap \case
             traverse_ (send . flip SetLightPower (not b))
                 =<< send (GetLightsInGroup livingRoomLightGroup)
         switchMode if b then Quiet else Normal
-    speakerName = "pi"
+    speakerName = "pi" :: Text
     -- TODO search for `label = "Living Room"` instead? actually not easily done
-    livingRoomLightGroup = "\x63\xCD\x89\x80\xDF\x31\xC6\xD5\xF6\xAC\xD\xDF\x12\x5B\x55\x7B"
+    livingRoomLightGroup = "\x63\xCD\x89\x80\xDF\x31\xC6\xD5\xF6\xAC\xD\xDF\x12\x5B\x55\x7B" :: ByteString
 
 feed :: [Text] -> Mode -> Opts -> S.Stream IO [Event]
 feed keyboardNames initialMode opts =
