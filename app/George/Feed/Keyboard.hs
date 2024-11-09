@@ -11,6 +11,8 @@ import Control.Monad.Freer
 import Control.Monad.State.Strict
 import Control.Monad.Writer
 import Data.Bifunctor
+import Data.Colour.Names qualified as Colour
+import Data.Colour.SRGB (toSRGB)
 import Data.Foldable
 import Data.IORef
 import Data.Set (Set)
@@ -21,6 +23,8 @@ import Evdev (EventData (KeyEvent), KeyEvent (..))
 import Evdev qualified
 import Evdev.Codes (Key (..))
 import Evdev.Stream
+import Lifx.Internal.Colour (rgbToHsbk)
+import Lifx.Lan (HSBK (..))
 import Lifx.Lan qualified as Lifx
 import Optics
 import Optics.State.Operators
@@ -170,6 +174,14 @@ dispatchKeys opts = wrap \case
                         getLightOrGroup >>= traverse_ \l -> send . SetLightPower l $ not p
                     KeyDot -> act $ send . flip SpotifyTransfer ctrl =<< send (SpotifyGetDevice speakerName)
                     KeyT -> irOnce IRTV "KEY_POWER"
+                    Key3 -> act do
+                        l <- send GetCurrentLight
+                        send $ SetLightPower l True
+                        send $ SetLightColour False l 0 $ rgbToHsbk $ toSRGB Colour.red
+                        p <- send GetHifiPlugPower
+                        when (not p) $ send $ SetHifiPlugPower True
+                        send . SpotifySearchAndPlay Spotify.TrackSearch "La Femme L'hawaïenne"
+                            =<< send (SpotifyGetDevice speakerName)
                     _ -> pure ()
                 _ -> pure ()
           where
