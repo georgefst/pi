@@ -313,8 +313,9 @@ dispatchKeys opts = wrap \case
     -- TODO search for `label = "Living Room"` instead? actually not easily done
     livingRoomLightGroup = "\x63\xCD\x89\x80\xDF\x31\xC6\xD5\xF6\xAC\xD\xDF\x12\x5B\x55\x7B" :: ByteString
 
-feed :: [Text] -> Mode -> Opts -> S.Stream IO [Event]
-feed keyboardNames initialMode opts =
+-- TODO I can't find a reliable heuristic for "basically a keyboard", so we take `isKeyboardName` predicate for now
+feed :: (Text -> Bool) -> Mode -> Opts -> S.Stream IO [Event]
+feed isKeyboardName initialMode opts =
     (((S.parConcat id . fmap snd) .) . S.runStateT . pure)
         ( KeyboardState
             { keyboards = mempty
@@ -349,8 +350,7 @@ feed keyboardNames initialMode opts =
                         (StateT . dispatchKeys opts . Evdev.eventData)
                 )
                 . S.morphInner lift
-                -- I can't find a reliable heuristic for "basically a keyboard" so we filter by name
-                . S.filterM (fmap ((`elem` keyboardNames) . decodeUtf8) . liftIO . Evdev.deviceName . fst)
+                . S.filterM (liftIO . fmap (isKeyboardName . decodeUtf8) . Evdev.deviceName . fst)
                 . readEventsMany
             )
         -- TODO I'm a bit worried about what this might do to fusion - generalise `readEventsMany` instead?

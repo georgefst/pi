@@ -132,7 +132,7 @@ main = do
             )
         $ S.parList
             id
-            [ Keyboard.feed opts.keyboard initialMode Keyboard.Opts{..}
+            [ Keyboard.feed (`elem` opts.keyboard) initialMode Keyboard.Opts{..}
             , WebServer.feed opts.httpPort
             -- TODO disabled until logging is better
             -- it's easier to see events when monitoring through a separate script
