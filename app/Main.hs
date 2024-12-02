@@ -19,6 +19,7 @@ import Data.List.NonEmpty (nonEmpty)
 import Data.Map qualified as Map
 import Data.Maybe
 import Data.Stream.Infinite qualified as Stream
+import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.Word
 import Lifx.Lan qualified as Lifx
@@ -45,7 +46,6 @@ data Opts = Opts
     , lifxIgnore :: [Text]
     , lifxPort :: Word16
     , httpPort :: Warp.Port
-    , keyboard :: [Text]
     , keySendPort :: PortNumber
     , keySendIps :: [IP]
     , hifiPlugIp :: IP
@@ -132,7 +132,7 @@ main = do
             )
         $ S.parList
             id
-            [ Keyboard.feed (`elem` opts.keyboard) initialMode Keyboard.Opts{..}
+            [ Keyboard.feed ("Keyboard" `T.isInfixOf`) initialMode Keyboard.Opts{..}
             , WebServer.feed opts.httpPort
             -- TODO disabled until logging is better
             -- it's easier to see events when monitoring through a separate script
