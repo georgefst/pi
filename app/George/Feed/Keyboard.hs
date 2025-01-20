@@ -11,7 +11,6 @@ import Control.Monad.Freer
 import Control.Monad.State.Strict
 import Control.Monad.Writer
 import Data.Bifunctor
-import Data.ByteString (ByteString)
 import Data.Colour.Names qualified as Colour
 import Data.Colour.SRGB (toSRGB)
 import Data.Foldable
@@ -108,9 +107,7 @@ dispatchKeys opts = wrap \case
         finishTyping = #typing .= Nothing >> liftIO finish
     (k, e, KeyboardState{..}) -> case mode of
         Idle -> pure ()
-        Quiet -> case (k, e) of
-            (KeySpace, Pressed) -> night False
-            _ -> pure ()
+        Quiet -> pure ()
         Normal -> case k of
             KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
             KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
@@ -140,7 +137,6 @@ dispatchKeys opts = wrap \case
                     KeyR | alt -> irOnce IRFan "rotate"
                     KeyL | alt -> irOnce IRFan "level"
                     KeyP | alt -> irOnce IRFan "power"
-                    KeySpace -> night True
                     KeyP -> act do
                         wasOn <- send GetHifiPlugPower
                         if wasOn then hifiOn else hifiOff
@@ -304,14 +300,7 @@ dispatchKeys opts = wrap \case
               where
                 pause = liftIO (threadDelay 300_000) >> pure []
                 setLED = ActionEvent mempty . send . SetLED led
-    night b = do
-        act $
-            traverse_ (send . flip SetLightPower (not b))
-                =<< send (GetLightsInGroup livingRoomLightGroup)
-        switchMode if b then Quiet else Normal
     speakerName = "pi" :: Text
-    -- TODO search for `label = "Living Room"` instead? actually not easily done
-    livingRoomLightGroup = "\x63\xCD\x89\x80\xDF\x31\xC6\xD5\xF6\xAC\xD\xDF\x12\x5B\x55\x7B" :: ByteString
 
 -- TODO I can't find a reliable heuristic for "basically a keyboard", so we take `isKeyboardName` predicate for now
 feed :: (Text -> Bool) -> Mode -> Opts -> S.Stream IO [Event]
