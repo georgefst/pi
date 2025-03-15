@@ -300,7 +300,7 @@ dispatchKeys opts = wrap \case
               where
                 pause = liftIO (threadDelay 300_000) >> pure []
                 setLED = ActionEvent mempty . send . SetLED led
-    speakerName = "pi" :: Text
+    speakerName = "sol" :: Text
 
 -- TODO I can't find a reliable heuristic for "basically a keyboard", so we take `isKeyboardName` predicate for now
 feed :: (Text -> Bool) -> Mode -> Opts -> S.Stream IO [Event]
