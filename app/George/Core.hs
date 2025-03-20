@@ -185,12 +185,12 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
             (if b then [("ACT", "mmc0"), ("PWR", "default-on")] else [("ACT", "none"), ("PWR", "none")])
     LaunchProgram p -> liftIO do
         mv <- newEmptyMVar
-        pid <- forkProcess do
-            sid <- createSession
-            putMVar mv sid
-            executeFile p True [] Nothing
-        sid <- readMVar mv
-        pure (pid, sid)
+        (,)
+            <$> forkProcess do
+                sid <- createSession
+                putMVar mv sid
+                executeFile p True [] Nothing
+            <*> readMVar mv
     SendKey k e -> do
         -- TODO DRY this with my `net-evdev` repo
         sock <- use #keySendSocket
