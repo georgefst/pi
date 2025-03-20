@@ -59,6 +59,7 @@ import Spotify.Types.Tracks qualified as Spotify
 import Streamly.Data.Fold qualified as SF
 import Streamly.Data.Stream.Prelude qualified as S
 import System.Exit
+import System.Posix
 import System.Process.Extra
 import Util.GPIO.Persistent qualified as GPIO
 import Util.Util
@@ -125,6 +126,7 @@ data Action a where
     Reboot :: Action ()
     SetLED :: Int -> Bool -> Action ()
     SetSystemLEDs :: Bool -> Action ()
+    LaunchProgram :: FilePath -> Action ProcessID
     SendKey :: Key -> KeyEvent -> Action ()
     GetCurrentLight :: Action Lifx.Device
     GetCurrentLightGroup :: Action ByteString
@@ -180,6 +182,7 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         traverse_
             (\(l, v) -> liftIO $ readProcess "sudo" ["tee", "/sys/class/leds/" <> l <> "/trigger"] (v <> "\n"))
             (if b then [("ACT", "mmc0"), ("PWR", "default-on")] else [("ACT", "none"), ("PWR", "none")])
+    LaunchProgram p -> liftIO $ forkProcess $ createSession >> executeFile p True [] Nothing
     SendKey k e -> do
         -- TODO DRY this with my `net-evdev` repo
         sock <- use #keySendSocket

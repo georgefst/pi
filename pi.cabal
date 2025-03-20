@@ -58,6 +58,7 @@ executable pi
         text ^>= {2.0, 2.1},
         time ^>= {1.12, 1.13, 1.14},
         transformers ^>= 0.6,
+        unix ^>= 2.8,
         wai ^>= 3.2,
         warp ^>= {3.3.28, 3.4},
     default-language: GHC2021
