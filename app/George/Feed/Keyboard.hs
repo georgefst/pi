@@ -169,6 +169,9 @@ dispatchKeys opts = wrap \case
                         when (not p) hifiOff
                         send . SpotifySearchAndPlay Spotify.TrackSearch "La Femme L'hawaïenne"
                             =<< send (SpotifyGetDevice speakerName)
+                    KeyF -> simpleAct $ LaunchProgram "firefox"
+                    KeyG -> simpleAct $ LaunchProgram "steamlink"
+                    KeyK -> simpleAct $ LaunchProgram "kodi"
                     _ -> pure ()
                 _ -> pure ()
           where
