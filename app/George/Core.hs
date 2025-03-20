@@ -187,8 +187,7 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         mv <- newEmptyMVar
         (,)
             <$> forkProcess do
-                sid <- createSession
-                putMVar mv sid
+                putMVar mv =<< createSession
                 executeFile p True [] Nothing
             <*> readMVar mv
     SendKey k e -> do
