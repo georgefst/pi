@@ -12,7 +12,6 @@ module George.Core where
 import Util
 import Util.Lifx
 
-import Control.Concurrent (newEmptyMVar, putMVar, readMVar)
 import Control.Exception (IOException)
 import Control.Monad
 import Control.Monad.Catch
@@ -127,7 +126,7 @@ data Action a where
     Reboot :: Action ()
     SetLED :: Int -> Bool -> Action ()
     SetSystemLEDs :: Bool -> Action ()
-    LaunchProgram :: FilePath -> Action (ProcessID, ProcessGroupID)
+    LaunchProgram :: FilePath -> Action ProcessID
     SendKey :: Key -> KeyEvent -> Action ()
     GetCurrentLight :: Action Lifx.Device
     GetCurrentLightGroup :: Action ByteString
@@ -183,13 +182,7 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         traverse_
             (\(l, v) -> liftIO $ readProcess "sudo" ["tee", "/sys/class/leds/" <> l <> "/trigger"] (v <> "\n"))
             (if b then [("ACT", "mmc0"), ("PWR", "default-on")] else [("ACT", "none"), ("PWR", "none")])
-    LaunchProgram p -> liftIO do
-        mv <- newEmptyMVar
-        (,)
-            <$> forkProcess do
-                putMVar mv =<< createSession
-                executeFile p True [] Nothing
-            <*> readMVar mv
+    LaunchProgram p -> liftIO $ forkProcess $ executeFile p True [] Nothing
     SendKey k e -> do
         -- TODO DRY this with my `net-evdev` repo
         sock <- use #keySendSocket
