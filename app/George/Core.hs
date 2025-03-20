@@ -285,7 +285,7 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                 . (fmap (.uri) . listToMaybe . (.items) =<<)
         play context item =
             liftIO
-                . Spotify.startPlayback (Just device) -- ID for this    device
+                . Spotify.startPlayback (Just device) -- ID for this device
                 $ Spotify.StartPlaybackOpts context item Nothing
   where
     -- TODO factor out a module as a prototype library
