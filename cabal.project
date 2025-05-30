@@ -4,8 +4,7 @@ packages: .
 source-repository-package
     type: git
     location: https://github.com/georgefst/lifx-lan
-    tag: 4795c0d940f7ed5b9df66a8c97b72fd91f3b2f97
-allow-newer: lifx-lan:*
+    tag: 6209f4cd1d6ff8033c5d294d2388af66a0a87620
 
 -- TODO for some reason, we get segfaults on ARM when the `Setup.hs` is removed
 -- so we can't use anything after https://github.com/cdepillabout/pretty-simple/commit/ef6aef7
@@ -88,3 +87,8 @@ if impl(ghc >= 9.10)
         aeson-optics:base,
         -- deprecated library - can be removed once `evdev` stops depending on it
         filepath-bytestring:base,
+
+if impl(ghc >= 9.12)
+    allow-newer:
+        -- https://github.com/ocharles/logging-effect/pull/44
+        logging-effect:base,
