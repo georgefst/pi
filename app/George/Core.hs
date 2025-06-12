@@ -150,8 +150,7 @@ data Action a where
     SpotifySearchAndPlay :: Spotify.SearchType -> Text -> Spotify.DeviceID -> Action ()
 deriving instance Show (Action a)
 data IRDev
-    = IRHifi
-    | IRTV -- TODO move to separate module to avoid need for prefixes?
+    = IRTV -- TODO move to separate module to avoid need for prefixes?
     | IRSwitcher
     | IRFan
     deriving (Show)
@@ -245,7 +244,6 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
                     T.unpack
                     [ "-k"
                     , (<> ".toml") case dev of
-                        IRHifi -> "stereo"
                         IRTV -> "tv"
                         IRSwitcher -> "switcher"
                         IRFan -> "fan"

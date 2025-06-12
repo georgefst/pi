@@ -109,8 +109,8 @@ dispatchKeys opts = wrap \case
         Idle -> pure ()
         Quiet -> pure ()
         Normal -> case k of
-            KeyVolumeup -> irHold e IRHifi "KEY_VOLUMEUP"
-            KeyVolumedown -> irHold e IRHifi "KEY_VOLUMEDOWN"
+            KeyVolumeup -> simpleAct $ Mpris "VolumeUp"
+            KeyVolumedown -> simpleAct $ Mpris "VolumeDown"
             KeyLeft -> modifyLight $ #hue %~ subtract hueInterval
             KeyRight -> modifyLight $ #hue %~ (+ hueInterval)
             KeyMinus -> modifyLight $ #saturation %~ incrementLightField clampedSub minBound 256
@@ -151,7 +151,6 @@ dispatchKeys opts = wrap \case
                         when wasOff $ send $ SetLightPower l False
                       where
                         flashTime = 0.35
-                    KeyMute -> irOnce IRHifi "KEY_MUTING"
                     KeyPlaypause -> simpleAct $ Mpris "PlayPause"
                     KeyPrevioussong -> simpleAct $ Mpris "Previous"
                     KeyNextsong -> simpleAct $ Mpris "Next"
@@ -192,15 +191,9 @@ dispatchKeys opts = wrap \case
                     then send . GetLightsInGroup =<< send GetCurrentLightGroup
                     else pure <$> send GetCurrentLight
             hifiOn = do
-                send $ SendIR IRHifi "KEY_POWER"
-                send $ Sleep 3
                 send $ SetHifiPlugPower False
             hifiOff = do
                 send $ SetHifiPlugPower True
-                send $ Sleep 1
-                send $ SendIR IRHifi "KEY_POWER"
-                send $ Sleep 1
-                send $ SendIR IRHifi "KEY_TAPE"
         TV -> case k of
             KeySpace | e == Pressed -> act do
                 send $ SendIR IRTV "KEY_AUX"
