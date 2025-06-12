@@ -224,7 +224,7 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
             maybe
                 (throwError $ SimpleError "Failed to find spotifyd in qdbus output")
                 (pure . dropWhile isSpace)
-                . find (" org.mpris.MediaPlayer2.spotifyd" `isPrefixOf`)
+                . find (" rs.spotifyd" `isPrefixOf`)
                 . lines
                 =<< liftIO (readProcess "qdbus" [] "")
         liftIO . void $
