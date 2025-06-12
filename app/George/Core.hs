@@ -223,8 +223,9 @@ runAction opts@ActionOpts{setLED {- TODO GHC doesn't yet support impredicative f
         service <-
             maybe
                 (throwError $ SimpleError "Failed to find spotifyd in qdbus output")
-                (pure . dropWhile isSpace)
-                . find (" rs.spotifyd" `isPrefixOf`)
+                pure
+                . find ("rs.spotifyd" `isPrefixOf`)
+                . map (dropWhile isSpace)
                 . lines
                 =<< liftIO (readProcess "qdbus" [] "")
         liftIO . void $
