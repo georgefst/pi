@@ -158,7 +158,7 @@ dispatchKeys opts = wrap \case
                     KeyL -> act do
                         p <- send . GetLightPower =<< send GetCurrentLight
                         getLightOrGroup >>= traverse_ \l -> send . SetLightPower l $ not p
-                    KeyDot -> act $ send . flip SpotifyTransfer ctrl =<< send (SpotifyGetDevice speakerName)
+                    KeyDot -> simpleAct $ Mpris "TransferPlayback"
                     KeyT -> irOnce IRTV "KEY_POWER"
                     Key3 -> act do
                         l <- send GetCurrentLight
